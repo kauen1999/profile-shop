@@ -6,13 +6,17 @@ const { asyncHandler } = require('../asyncHandler');
 
 const router = express.Router();
 const IMAGES_DIR = path.join(__dirname, '../../public/images');
-// Hosts serverless (ex: Vercel) têm filesystem só-leitura fora de /tmp — mkdir
-// falha ali, mas as rotas de leitura desta feature ainda devem funcionar
-// normalmente num host com disco de verdade (ex: local, Railway).
+// Hosts serverless (ex: Vercel) não têm disco gravável fora de /tmp — mkdir
+// falha ali (o código observado na prática foi ENOENT, não EROFS/EACCES como
+// seria de esperar num filesystem só-leitura comum — o runtime da Vercel
+// aparentemente reporta o erro de outro jeito; por isso qualquer erro aqui é
+// ignorado, não só os dois códigos esperados). O disco é só um cache de
+// melhor esforço — o Neon (CatalogImage) é a fonte durável, então essa rota
+// funciona normalmente mesmo sem conseguir escrever localmente.
 try {
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
-} catch (err) {
-  if (err.code !== 'EROFS' && err.code !== 'EACCES') throw err;
+} catch {
+  // best-effort — ver comentário acima
 }
 
 const REMOTE_PREFIX = 'https://wiki.otponline.com';
@@ -33,8 +37,8 @@ const CONTENT_TYPES = {
 async function saveImage(localFilename, buffer) {
   try {
     fs.writeFileSync(path.join(IMAGES_DIR, localFilename), buffer);
-  } catch (err) {
-    if (err.code !== 'EROFS' && err.code !== 'EACCES') throw err;
+  } catch {
+    // best-effort — ver comentário acima de IMAGES_DIR
   }
 
   const ext = path.extname(localFilename).toLowerCase();
