@@ -6,7 +6,14 @@ const { asyncHandler } = require('../asyncHandler');
 
 const router = express.Router();
 const IMAGES_DIR = path.join(__dirname, '../../public/images');
-fs.mkdirSync(IMAGES_DIR, { recursive: true });
+// Hosts serverless (ex: Vercel) têm filesystem só-leitura fora de /tmp — mkdir
+// falha ali, mas as rotas de leitura desta feature ainda devem funcionar
+// normalmente num host com disco de verdade (ex: local, Railway).
+try {
+  fs.mkdirSync(IMAGES_DIR, { recursive: true });
+} catch (err) {
+  if (err.code !== 'EROFS' && err.code !== 'EACCES') throw err;
+}
 
 const REMOTE_PREFIX = 'https://wiki.otponline.com';
 
