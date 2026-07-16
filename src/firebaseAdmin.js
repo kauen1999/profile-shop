@@ -5,20 +5,27 @@ const admin = require('firebase-admin');
 // is require()'d from multiple places (routes, scripts) but the SDK must
 // only be initialized once per process.
 if (!admin.apps.length) {
-  if (!process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
+  // FIREBASE_SERVICE_ACCOUNT_JSON (conteúdo do JSON inline) é a opção usada em
+  // hosts de deploy, já que o arquivo apontado por FIREBASE_SERVICE_ACCOUNT_PATH
+  // está no .gitignore e não existe fora da máquina local.
+  let serviceAccount;
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  } else if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
+    const serviceAccountPath = path.resolve(
+      __dirname,
+      '..',
+      process.env.FIREBASE_SERVICE_ACCOUNT_PATH
+    );
+    serviceAccount = require(serviceAccountPath);
+  } else {
     throw new Error(
-      'FIREBASE_SERVICE_ACCOUNT_PATH não definido no .env — necessário para inicializar o Firebase Admin SDK.'
+      'Nem FIREBASE_SERVICE_ACCOUNT_JSON nem FIREBASE_SERVICE_ACCOUNT_PATH definidos — necessário um dos dois para inicializar o Firebase Admin SDK.'
     );
   }
 
-  const serviceAccountPath = path.resolve(
-    __dirname,
-    '..',
-    process.env.FIREBASE_SERVICE_ACCOUNT_PATH
-  );
-
   admin.initializeApp({
-    credential: admin.credential.cert(require(serviceAccountPath)),
+    credential: admin.credential.cert(serviceAccount),
   });
 }
 
