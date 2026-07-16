@@ -18,7 +18,8 @@
     "npcshops:sync": "node src/wiki-crawler/parsers/syncNpcShopCatalog.js",
     "crafting:sync": "node src/wiki-crawler/parsers/syncCraftingIngredients.js",
     "subcategories:sync": "node src/wiki-crawler/parsers/syncSubcategories.js",
-    "sprites:normalize-shiny": "node scripts/normalizeShinySprites.js"
+    "sprites:normalize-shiny": "node scripts/normalizeShinySprites.js",
+    "images:backfill-neon": "node scripts/backfillImagesToNeon.js"
   },
   "license": "ISC",
   "description": "API backend consumindo o Postgres (Neon)",

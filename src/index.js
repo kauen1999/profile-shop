@@ -9,6 +9,19 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use('/images', express.static(path.join(__dirname, '../public/images')));
+// Fallback pro Neon (tabela CatalogImage) quando o arquivo não está no disco
+// local — necessário em hosts sem disco gravável persistente (ex: Vercel) ou
+// quando a imagem só foi migrada via backfill, nunca escrita nesse disco.
+app.get(
+  '/images/:filename',
+  asyncHandler(async (req, res) => {
+    const image = await prisma.catalogImage.findUnique({ where: { filename: req.params.filename } });
+    if (!image) return res.status(404).json({ error: 'Imagem não encontrada.' });
+    res.set('Content-Type', image.contentType);
+    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    res.send(Buffer.from(image.data));
+  })
+);
 app.use('/wiki-crawl', require('./wiki-crawler/routes'));
 app.use('/wiki-images', require('./routes/wikiImages'));
 app.use('/catalog-items', require('./routes/catalogItems'));

@@ -17,6 +17,34 @@ try {
 
 const REMOTE_PREFIX = 'https://wiki.otponline.com';
 
+const CONTENT_TYPES = {
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+};
+
+// Grava em disco (melhor esforço — cache rápido local/hosts com disco de
+// verdade) e no Neon via CatalogImage (fonte durável, funciona em qualquer
+// host, inclusive serverless sem disco gravável). GET /images/:filename em
+// src/index.js lê do disco primeiro e cai pro Neon como fallback.
+async function saveImage(localFilename, buffer) {
+  try {
+    fs.writeFileSync(path.join(IMAGES_DIR, localFilename), buffer);
+  } catch (err) {
+    if (err.code !== 'EROFS' && err.code !== 'EACCES') throw err;
+  }
+
+  const ext = path.extname(localFilename).toLowerCase();
+  await prisma.catalogImage.upsert({
+    where: { filename: localFilename },
+    create: { filename: localFilename, contentType: CONTENT_TYPES[ext] || 'application/octet-stream', data: buffer },
+    update: { contentType: CONTENT_TYPES[ext] || 'application/octet-stream', data: buffer },
+  });
+}
+
 // Nested looktype URLs (extractedFields.addonCompatibilities[i].looktypeImageUrl
 // / .looktypeShinyImageUrl on `addons`-category rows) are a second, separate
 // source of pending work discovered later than the original top-level
@@ -133,7 +161,7 @@ router.post(
       // local file.
       const variantSuffix = field === 'looktypeShinyImageUrl' ? 'shiny' : 'normal';
       const localFilename = `${wikiPageId}-looktype-${compatibilityIndex}-${variantSuffix}${ext}`;
-      fs.writeFileSync(path.join(IMAGES_DIR, localFilename), buffer);
+      await saveImage(localFilename, buffer);
       const localUrl = `${req.protocol}://${req.get('host')}/images/${localFilename}`;
 
       // Analogous to the top-level case's `extractedFields.wikiImageUrl`
@@ -162,7 +190,7 @@ router.post(
     }
 
     const localFilename = `${wikiPageId}${ext}`;
-    fs.writeFileSync(path.join(IMAGES_DIR, localFilename), buffer);
+    await saveImage(localFilename, buffer);
 
     const localUrl = `${req.protocol}://${req.get('host')}/images/${localFilename}`;
 
