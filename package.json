@@ -1,0 +1,36 @@
+{
+  "name": "profile-shop",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test test/",
+    "pokemon:sync": "node src/wiki-crawler/parsers/syncPokemonCatalog.js",
+    "pokemon:sync-shiny": "node src/wiki-crawler/parsers/syncShinyPokemonCatalog.js",
+    "battlepass:sync": "node src/wiki-crawler/parsers/syncBattlePassCatalog.js",
+    "events:sync": "node src/wiki-crawler/parsers/syncEventCatalog.js",
+    "dailyboss:sync": "node src/wiki-crawler/parsers/syncDailyBossCatalog.js",
+    "dungeons:sync": "node src/wiki-crawler/parsers/syncDungeonCatalog.js",
+    "quests:sync": "node src/wiki-crawler/parsers/syncQuestCatalog.js",
+    "craftsystem:sync": "node src/wiki-crawler/parsers/syncCraftSystemCatalog.js",
+    "minigames:sync": "node src/wiki-crawler/parsers/syncMinigamesCatalog.js",
+    "npcshops:sync": "node src/wiki-crawler/parsers/syncNpcShopCatalog.js",
+    "crafting:sync": "node src/wiki-crawler/parsers/syncCraftingIngredients.js",
+    "subcategories:sync": "node src/wiki-crawler/parsers/syncSubcategories.js",
+    "sprites:normalize-shiny": "node scripts/normalizeShinySprites.js"
+  },
+  "license": "ISC",
+  "description": "API backend consumindo o Postgres (Neon)",
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "firebase-admin": "^13.10.0",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "prisma": "^6.19.3"
+  }
+}

@@ -1,0 +1,1043 @@
+/* Styles for the "create listing" flow: FabSpeedDial, NewListingPageShell,
+   Autocomplete, and LookPreviewCard. Reuses the --ps-blue/--ps-yellow/
+   --ps-ink/--ps-bg custom properties already defined on .landing in
+   Landing.css (these components are always rendered inside a .landing
+   wrapper, so the variables are in scope).
+
+   Mobile-first (Architecture Rule 6): base rules below target mobile with
+   no media query; @media (min-width: 860px) — the breakpoint already
+   established in Landing.css — enhances for tablet/desktop. Never the
+   reverse. */
+
+/* ---------- FabSpeedDial (generic, no page-specific knowledge) ---------- */
+
+.fab-speed-dial {
+  position: fixed;
+  /* env(safe-area-inset-*) accounts for the iPhone home-indicator bar /
+     rounded-corner screen edge — on a real iPhone (unlike Chromium's mobile
+     emulation, which doesn't model this), a plain `right/bottom: 1.25rem`
+     can render partly under Safari's own bottom bar or right up against the
+     screen's rounded edge, reading as "cut off". Falls back to 0 on
+     everything else (desktop, older Android), so this is purely additive. */
+  right: calc(1.25rem + env(safe-area-inset-right, 0px));
+  bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.75rem;
+  /* Reported: the FAB disappears mid-momentum-scroll on a real phone and
+     only reappears once scrolling stops. There's no scroll listener
+     anywhere near this component (checked FabSpeedDial.jsx — it only reacts
+     to click-outside), so this isn't our JS hiding it; it's the well-known
+     mobile Safari/Chrome quirk where a `position: fixed` element can drop a
+     frame (or several) while the browser's own address-bar show/hide
+     animation is running during scroll, because it isn't on its own
+     compositor layer. Forcing one with `translateZ(0)` is the standard fix —
+     it makes the browser treat this element as an independently composited
+     layer that survives the toolbar animation instead of being repainted
+     (and briefly vanishing) alongside the page content. */
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+/* 2026-07-15, final iteration of several same-day redesigns (literal Poké
+   Ball → Plusle sprite → Plusle/Minun alternating sprites) — replaced with
+   a pure-CSS Material-style plus/minus toggle, explicitly "sem usar imagem,
+   sprite ou ilustração do Pokémon", only their color/symbol identity:
+   solid red + thick rounded yellow "+" when closed (Plusle), solid blue +
+   the same "−" when open (Minun) — no image, no timer, the swap is driven
+   purely by `aria-expanded` (already set by FabSpeedDial.jsx from its own
+   `open` state, nothing new to wire up) and animates smoothly on open/close
+   only, never on its own. The "+"/"−" glyph itself is two CSS bars
+   (`.fab-button-icon::before` horizontal, `::after` vertical) rather than a
+   text character — a real character's stroke weight/corner style isn't
+   controllable per the request ("traços grossos e pontas arredondadas"),
+   bars with `border-radius` are. The vertical bar scales away
+   (`scaleY(0)`) to turn "+" into "−"; the horizontal bar never moves. */
+.fab-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: none;
+  background-color: #ef4444; /* Plusle-red, closed state */
+  box-shadow: 0 10px 24px rgba(26, 31, 61, 0.3);
+  cursor: pointer;
+  transition: background-color 0.28s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fab-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px rgba(26, 31, 61, 0.35);
+}
+
+.fab-button[aria-expanded='true'] {
+  background-color: #3b82f6; /* Minun-blue, open state */
+}
+
+.fab-button-icon {
+  position: relative;
+  width: 22px;
+  height: 22px;
+}
+
+.fab-button-icon::before,
+.fab-button-icon::after {
+  content: '';
+  position: absolute;
+  background: var(--ps-yellow, #ffcb05);
+  border-radius: 3px;
+  transition: transform 0.28s ease;
+}
+
+/* Horizontal bar — always present, forms the "−" alone and the crossbar of
+   the "+". */
+.fab-button-icon::before {
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 5px;
+  margin-top: -2.5px;
+}
+
+/* Vertical bar — visible while closed (completes the "+"), scaled away
+   when open, leaving only the horizontal bar (the "−"). */
+.fab-button-icon::after {
+  top: 0;
+  left: 50%;
+  width: 5px;
+  height: 100%;
+  margin-left: -2.5px;
+  transform: scaleY(1);
+}
+
+.fab-button[aria-expanded='true'] .fab-button-icon::after {
+  transform: scaleY(0);
+}
+
+.fab-speed-dial-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fab-speed-dial-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  border-radius: 999px;
+  border: none;
+  background: #fff;
+  color: var(--ps-ink, #1a1f3d);
+  font-weight: 700;
+  font-size: 0.88rem;
+  white-space: nowrap;
+  box-shadow: 0 8px 20px rgba(26, 31, 61, 0.22);
+  cursor: pointer;
+}
+
+.fab-speed-dial-item:disabled {
+  color: rgba(26, 31, 61, 0.45);
+  cursor: not-allowed;
+}
+
+.fab-speed-dial-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(46, 58, 158, 0.12);
+  color: var(--ps-blue, #2e3a9e);
+}
+
+/* ---------- NewListingPageShell (generic) ---------- */
+
+.new-listing-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 5.5rem;
+  box-sizing: border-box;
+}
+
+.new-listing-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.new-listing-title {
+  color: var(--ps-blue, #2e3a9e);
+  font-size: 1.6rem;
+  margin: 0;
+}
+
+.new-listing-back {
+  margin-top: 0.5rem;
+}
+
+.new-listing-preview {
+  min-width: 0;
+}
+
+/* ---------- form fields (visually based on .landing-auth-form's inputs) ---------- */
+
+.new-listing-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  background: #fff;
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 12px 30px rgba(26, 31, 61, 0.12);
+}
+
+.new-listing-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  /* Not `opacity` here on purpose: opacity < 1 creates a new stacking
+     context on this element, which would trap Autocomplete's dropdown
+     z-index inside this single label — a later sibling label (its own
+     opaque stacking context, later in DOM order) would then paint over the
+     whole dropdown regardless of the dropdown's own z-index. rgba() color
+     gets the same dimmed look without that side effect. */
+  color: rgba(26, 31, 61, 0.9);
+}
+
+.new-listing-form input[type='text'],
+.new-listing-form input[type='number'],
+.new-listing-form select,
+.new-listing-form textarea {
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(46, 58, 158, 0.25);
+  font-size: 0.95rem;
+  background: var(--ps-bg, #fff9ec);
+  color: var(--ps-ink, #1a1f3d);
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.new-listing-form input:disabled,
+.new-listing-form select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.new-listing-checkbox {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.5rem !important;
+}
+
+/* Generic label+picker wrapper, shared by Addons and Stickers (both are a
+   MultiSelectPicker instance) — previously named after stickers only, back
+   when addons was still a plain number input (2026-07-14 revision). */
+.new-listing-multiselect {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.new-listing-multiselect-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ps-ink, #1a1f3d);
+  opacity: 0.9;
+}
+
+.new-listing-price-hint {
+  margin: -0.4rem 0 0;
+  font-size: 0.8rem;
+  color: var(--ps-ink, #1a1f3d);
+  opacity: 0.65;
+}
+
+.multi-select-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.multi-select-picker-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.multi-select-picker-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(46, 58, 158, 0.1);
+  color: var(--ps-blue, #2e3a9e);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.multi-select-picker-chip button {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ---------- read-only display value (2026-07-14 addition) ----------
+   Used for informational fields the seller never edits directly (item
+   Slots/compatible Pokémon, resolved entirely from the catalog via
+   GET /store-item-options/:wikiPageId/template) — visually distinct from an
+   actual <input>/<select> so it doesn't look editable. */
+
+.new-listing-display-value {
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(46, 58, 158, 0.06);
+  color: var(--ps-ink, #1a1f3d);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+/* ---------- Autocomplete (generic) ---------- */
+
+.autocomplete {
+  position: relative;
+}
+
+.autocomplete-input {
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(46, 58, 158, 0.25);
+  font-size: 0.95rem;
+  background: var(--ps-bg, #fff9ec);
+  color: var(--ps-ink, #1a1f3d);
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.autocomplete-selected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(46, 58, 158, 0.25);
+  background: #fff;
+}
+
+.autocomplete-selected-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.92rem;
+  min-width: 0;
+}
+
+.autocomplete-clear {
+  border: none;
+  background: transparent;
+  color: var(--ps-ink, #1a1f3d);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.autocomplete-option-thumb {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.autocomplete-option-checkbox {
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.autocomplete-dropdown {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(26, 31, 61, 0.2);
+  z-index: 15;
+}
+
+.autocomplete-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: 0.88rem;
+  color: var(--ps-ink, #1a1f3d);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.autocomplete-option:hover {
+  background: rgba(46, 58, 158, 0.08);
+}
+
+.autocomplete-status {
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+/* ---------- PokemonSpritePreview (2026-07-14 addition) ---------- */
+
+.pokemon-sprite-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border-radius: 16px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 12px 30px rgba(26, 31, 61, 0.12);
+}
+
+.pokemon-sprite-preview-img {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+}
+
+/* Boost System aura (2026-07-15, revised same day to hug the sprite itself
+   instead of glowing around its rectangular box) — applied directly to the
+   <img> via filter: drop-shadow(), which follows the sprite's own alpha
+   silhouette (unlike box-shadow, which only knows the element's rectangular
+   bounding box). Same glow/color table as StoreListingCard.jsx's storefront
+   photo — see getBoostGlowColor.js. Multiple drop-shadow() layers are
+   chainable in one filter (unlike box-shadow, no need to re-declare a base
+   shadow here to avoid losing it). */
+.pokemon-sprite-preview-glow {
+  filter:
+    drop-shadow(0 0 4px var(--boost-glow-color))
+    drop-shadow(0 0 10px var(--boost-glow-color));
+}
+
+/* ---------- LookPreviewCard (generic) ---------- */
+
+.look-preview-card {
+  background: var(--ps-ink, #1a1f3d);
+  color: #fff;
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 12px 30px rgba(26, 31, 61, 0.18);
+  position: sticky;
+  top: 1.25rem;
+}
+
+.look-preview-title {
+  font-size: 1rem;
+  margin: 0 0 0.85rem;
+  color: var(--ps-yellow, #ffcb05);
+}
+
+.look-preview-body {
+  margin: 0;
+  font-family: inherit;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.look-preview-line {
+  display: inline;
+}
+
+/* ---------- Modal (generic, 2026-07-15 addition) ----------
+   First modal/dialog in this app — zero domain knowledge, same spirit as
+   FabSpeedDial/Autocomplete/LookPreviewCard above. View-only shell: no
+   built-in form chrome. Visual identity matches .landing-auth-card (white
+   rounded panel, same shadow) rather than inventing a new look. */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 31, 61, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  z-index: 30;
+}
+
+.modal-panel {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 12px 30px rgba(26, 31, 61, 0.12);
+  width: 100%;
+  max-width: 420px;
+  max-height: calc(100vh - 2.5rem);
+  overflow-y: auto;
+  padding: 1.5rem;
+  box-sizing: border-box;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--ps-blue, #2e3a9e);
+}
+
+.modal-close {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(46, 58, 158, 0.08);
+  color: var(--ps-ink, #1a1f3d);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* ---------- StoreListingCard (2026-07-15 addition) ----------
+   Unified storefront card — one per StoreItem/StorePokemon listing, used by
+   StoreProfile.jsx. Strict 3-zone layout (photo | info | actions) at
+   desktop width; on mobile the actions cluster wraps below the photo+info
+   row instead of being crammed into one row. Reuses the --ps- custom
+   properties and .landing-btn classes already defined in Landing.css (this
+   component always renders inside a .landing wrapper). */
+
+.store-listings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.store-listing-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  background: #fff;
+  border: 1px solid rgba(46, 58, 158, 0.1);
+  border-radius: 14px;
+  padding: 1rem;
+  box-shadow: 0 8px 20px rgba(26, 31, 61, 0.08);
+  transition: opacity 0.15s ease;
+}
+
+/* HIDDEN/SOLD listings, owner view only (non-owners never receive them at
+   all — filtered out before this component even renders, see
+   StoreProfile.jsx). */
+.store-listing-card-dimmed {
+  opacity: 0.6;
+}
+
+.store-listing-main {
+  display: flex;
+  gap: 0.85rem;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.store-listing-photo {
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ps-bg, #fff9ec);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.store-listing-photo img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* Boost System aura (2026-07-15, revised same day to hug the sprite itself
+   instead of glowing around its rectangular photo box) — applied directly to
+   the <img> via filter: drop-shadow(), which follows the sprite's own alpha
+   silhouette rather than a rectangular bounding box. `--boost-glow-color` is
+   set inline per card since the color is data-driven, not a fixed design
+   token. The photo box's `overflow: hidden` no longer needs overriding here
+   — the glow lives on the image itself, not on a box-shadow that the clip
+   would cut off. */
+.store-listing-photo-glow {
+  filter:
+    drop-shadow(0 0 3px var(--boost-glow-color))
+    drop-shadow(0 0 8px var(--boost-glow-color));
+}
+
+.store-listing-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.store-listing-tag {
+  align-self: flex-start;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(26, 31, 61, 0.1);
+  color: var(--ps-ink, #1a1f3d);
+}
+
+.store-listing-tag-sold {
+  background: rgba(56, 161, 105, 0.16);
+  color: #1f6e42;
+}
+
+.store-listing-tag-hidden {
+  background: rgba(163, 32, 47, 0.12);
+  color: #a3202f;
+}
+
+.store-listing-name {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--ps-ink, #1a1f3d);
+  overflow-wrap: anywhere;
+}
+
+/* Compact pill row (2026-07-15) — replaces the earlier bulleted vertical
+   list now that the card shows every non-empty look field (nickname, level,
+   gender, nature, boost, captured-at, held item, mega stone, addons+usando,
+   stickers, extra moves, preset slots for Pokémon; serial number/date/
+   world/notes for items), not just a small curated subset. Wraps to as many
+   rows as needed rather than growing the card's height with one line per
+   field. */
+.store-listing-details {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.store-listing-detail-pill {
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(46, 58, 158, 0.07);
+  color: var(--ps-ink, #1a1f3d);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  /* `white-space: nowrap` (removed) forced every pill to stay exactly as
+     wide as its unwrapped text — harmless on a wide desktop card, but on a
+     narrow phone a longer pill (e.g. "Held item: Black Belt", "Categoria:
+     Decoração") had nowhere to shrink to and just overflowed the card
+     (and, since flex containers propagate a child's overflow into their own
+     scrollWidth, the whole page) instead of wrapping. `max-width: 100%` +
+     `overflow-wrap` let a single long pill wrap onto more than one line
+     within its own rounded box instead. */
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+
+/* Addon-count pill is a real <button> (opens the view-only addon modal),
+   not a plain <li> like every other pill — resets the browser's default
+   button chrome (border/font/cursor) so it reads identically to the plain
+   pills at rest, with just a hover/focus cue to signal it's interactive. */
+.store-listing-detail-pill-button {
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.store-listing-detail-pill-button:hover,
+.store-listing-detail-pill-button:focus-visible {
+  background: rgba(46, 58, 158, 0.16);
+}
+
+/* Addon modal body — small grid of sprite + name, reusing .store-listing-photo
+   (already the app's established thumbnail look) for each addon instead of
+   inventing a new image treatment. */
+.addon-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 1rem;
+}
+
+.addon-modal-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  text-align: center;
+}
+
+.addon-modal-item .store-listing-photo {
+  width: 64px;
+  height: 64px;
+}
+
+.addon-modal-item-name {
+  font-size: 0.78rem;
+  color: var(--ps-ink, #1a1f3d);
+  overflow-wrap: anywhere;
+}
+
+.store-listing-price {
+  margin: 0.15rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  font-weight: 700;
+  color: var(--ps-blue, #2e3a9e);
+  font-size: 0.9rem;
+}
+
+.store-listing-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.store-listing-actions-primary {
+  display: flex;
+}
+
+.store-listing-actions-primary .landing-btn {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.store-listing-actions-secondary {
+  display: flex;
+  gap: 0.4rem;
+}
+
+/* Icon-only buttons (2026-07-15) — pencil/trash/eye, no visible label (moved
+   to aria-label/title for accessibility). Fixed small square instead of the
+   earlier flex-stretched text-button sizing. */
+.store-listing-action-btn {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(46, 58, 158, 0.25);
+  background: transparent;
+  color: var(--ps-ink, #1a1f3d);
+  cursor: pointer;
+  text-decoration: none;
+  font-family: inherit;
+}
+
+.store-listing-action-icon {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+}
+
+.store-listing-action-btn:hover {
+  background: rgba(46, 58, 158, 0.06);
+}
+
+.store-listing-action-btn-danger {
+  border-color: rgba(220, 53, 69, 0.4);
+  color: #a3202f;
+}
+
+.store-listing-action-btn-danger:hover {
+  background: rgba(220, 53, 69, 0.08);
+}
+
+.store-listing-action-error {
+  margin-bottom: 0.85rem;
+}
+
+/* ---------- ImportListings (2026-07-15 addition) ----------
+   The "paste look text(s) → review → create" bulk importer. Reuses
+   .new-listing-form for both the initial paste box and each per-draft
+   review card (a `<div className="new-listing-form import-listing-draft-card">`
+   — same white rounded panel look, no separate visual language invented).
+   Mobile-first: drafts stack in a single column always; there is
+   deliberately no two-column layout here even at desktop width (each draft
+   already embeds its own LookPreviewCard right below its fields, so a
+   separate preview column — like AddPokemonListing.jsx/AddItemListing.jsx
+   have — would either duplicate it or force awkward sticky-stacking with
+   multiple drafts). */
+
+.import-listing-intro {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ps-ink, #1a1f3d);
+  opacity: 0.8;
+}
+
+.import-listing-warning {
+  margin: 0;
+  padding: 0.6rem 0.85rem;
+  border-radius: 8px;
+  background: rgba(255, 203, 5, 0.18);
+  color: var(--ps-ink, #1a1f3d);
+  font-size: 0.85rem;
+}
+
+.import-listing-batch-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.import-listing-drafts {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.import-listing-draft-card {
+  border: 1px solid rgba(46, 58, 158, 0.12);
+}
+
+.import-listing-draft-title {
+  margin: 0;
+  color: var(--ps-blue, #2e3a9e);
+  font-size: 1.1rem;
+}
+
+.import-listing-raw-block {
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: rgba(26, 31, 61, 0.06);
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.import-listing-resolved-value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(46, 58, 158, 0.06);
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.import-listing-swap-link {
+  border: none;
+  background: transparent;
+  color: var(--ps-blue, #2e3a9e);
+  font-weight: 700;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.import-listing-review-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #a3202f;
+}
+
+.import-listing-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.import-listing-suggestion-chip {
+  border: 1px solid rgba(46, 58, 158, 0.25);
+  background: #fff;
+  color: var(--ps-ink, #1a1f3d);
+  border-radius: 999px;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.import-listing-suggestion-chip:hover {
+  background: rgba(46, 58, 158, 0.08);
+}
+
+.import-listing-done {
+  margin: 0;
+  font-weight: 700;
+  color: #1f6e42;
+}
+
+/* Tab bar (2026-07-15 addition) — several parsed drafts are windows you
+   switch between, never several forms stacked one below the other. Tabs
+   scroll horizontally on narrow screens instead of wrapping, so the ‹ ›
+   nav buttons stay usable even with many drafts. */
+.import-listing-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.import-listing-tabs {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  flex: 1 1 auto;
+  padding-bottom: 0.2rem;
+}
+
+.import-listing-tab {
+  flex-shrink: 0;
+  border: 1px solid rgba(46, 58, 158, 0.2);
+  background: #fff;
+  color: var(--ps-ink, #1a1f3d);
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.import-listing-tab-active {
+  border-color: var(--ps-blue, #2e3a9e);
+  background: var(--ps-blue, #2e3a9e);
+  color: #fff;
+}
+
+.import-listing-tab-review:not(.import-listing-tab-active) {
+  border-color: rgba(255, 153, 0, 0.5);
+  background: rgba(255, 203, 5, 0.15);
+}
+
+.import-listing-tab-error:not(.import-listing-tab-active) {
+  border-color: rgba(163, 32, 47, 0.4);
+  background: rgba(163, 32, 47, 0.08);
+  color: #a3202f;
+}
+
+.import-listing-tab-done:not(.import-listing-tab-active) {
+  border-color: rgba(31, 110, 66, 0.35);
+  background: rgba(31, 110, 66, 0.08);
+  color: #1f6e42;
+}
+
+/* Placeholder tab for a block still being resolved in the background
+   (2026-07-15 — drafts appear one at a time as each finishes instead of
+   waiting for the whole paste, see ImportListings.jsx's handleAnalyze). */
+.import-listing-tab-loading {
+  border-style: dashed;
+  background: transparent;
+  color: var(--ps-ink, #1a1f3d);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.import-listing-tab-nav {
+  flex-shrink: 0;
+  border: 1px solid rgba(46, 58, 158, 0.2);
+  background: #fff;
+  color: var(--ps-blue, #2e3a9e);
+  border-radius: 999px;
+  width: 2rem;
+  height: 2rem;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.import-listing-tab-nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ---------- responsive (tablet / desktop enhancements) ---------- */
+
+@media (min-width: 860px) {
+  .new-listing-wrap {
+    flex-direction: row;
+    align-items: flex-start;
+    padding: 2.5rem 2rem 5.5rem;
+  }
+
+  .new-listing-main {
+    flex: 1 1 60%;
+  }
+
+  .new-listing-preview {
+    flex: 1 1 40%;
+    position: sticky;
+    top: 1.25rem;
+  }
+
+  .store-listing-card {
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+
+  .store-listing-actions {
+    width: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.85rem;
+    margin-left: auto;
+  }
+
+  .store-listing-actions-primary .landing-btn {
+    width: auto;
+  }
+
+  .store-listing-actions-secondary {
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+}

@@ -1,0 +1,326 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model CatalogItem {
+  wikiPageId                                                        Int                   @id
+  name                                                              String
+  slug                                                              String                @unique
+  category                                                          String
+  imageUrl                                                          String
+  wikiTitle                                                         String
+  wikiUrl                                                           String
+  searchableText                                                    String
+  createdAt                                                         DateTime              @default(now())
+  updatedAt                                                         DateTime
+  extractedFields                                                   Json?
+  Listing                                                           Listing[]
+  StoreItem                                                         StoreItem[]
+  StorePokemon_StorePokemon_equippedAddonCatalogItemIdToCatalogItem StorePokemon[]        @relation("StorePokemon_equippedAddonCatalogItemIdToCatalogItem")
+  StorePokemon_StorePokemon_heldItemCatalogItemIdToCatalogItem      StorePokemon[]        @relation("StorePokemon_heldItemCatalogItemIdToCatalogItem")
+  StorePokemon_StorePokemon_megaStoneCatalogItemIdToCatalogItem     StorePokemon[]        @relation("StorePokemon_megaStoneCatalogItemIdToCatalogItem")
+  StorePokemon_StorePokemon_pokeballCatalogItemIdToCatalogItem      StorePokemon[]        @relation("StorePokemon_pokeballCatalogItemIdToCatalogItem")
+  StorePokemon_StorePokemon_pokemonCatalogItemIdToCatalogItem       StorePokemon[]        @relation("StorePokemon_pokemonCatalogItemIdToCatalogItem")
+  StorePokemonAddon                                                 StorePokemonAddon[]
+  StorePokemonSticker                                               StorePokemonSticker[]
+}
+
+model CatalogItemLineage {
+  id               String         @id
+  wikiPageId       Int
+  executionId      String
+  replaySnapshotId String
+  sourcePage       String
+  sourceUrl        String?
+  rowNumber        Int
+  parserName       String
+  parserVersion    String
+  entityName       String
+  recordedAt       DateTime       @default(now())
+  SyncExecution    SyncExecution  @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  ReplaySnapshot   ReplaySnapshot @relation(fields: [replaySnapshotId], references: [id], onDelete: Cascade)
+
+  @@unique([executionId, wikiPageId, replaySnapshotId])
+  @@index([executionId])
+  @@index([replaySnapshotId])
+  @@index([wikiPageId])
+}
+
+model Listing {
+  id            Int           @id @default(autoincrement())
+  tradeType     TradeType
+  price         Int
+  quantity      Int
+  status        ListingStatus @default(ACTIVE)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime
+  userId        Int
+  catalogItemId Int
+  CatalogItem   CatalogItem   @relation(fields: [catalogItemId], references: [wikiPageId])
+  User          User          @relation(fields: [userId], references: [id])
+
+  @@index([catalogItemId])
+  @@index([status])
+  @@index([tradeType])
+  @@index([userId])
+}
+
+model ParserAuditRecord {
+  id                   String        @id
+  executionId          String
+  category             String
+  pageTitle            String
+  rowNumber            Int
+  accepted             Boolean
+  rejectReason         String?
+  classificationResult Json
+  extractedFields      Json?
+  parserName           String
+  parserVersion        String
+  recordedAt           DateTime      @default(now())
+  SyncExecution        SyncExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@index([category, pageTitle])
+  @@index([executionId])
+}
+
+model ReplaySnapshot {
+  id                 String               @id
+  executionId        String
+  category           String
+  sourcePage         String
+  sourceUrl          String?
+  parserName         String
+  parserVersion      String
+  rawHtml            String
+  capturedAt         DateTime             @default(now())
+  CatalogItemLineage CatalogItemLineage[]
+  SyncExecution      SyncExecution        @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@index([category, sourcePage])
+  @@index([executionId])
+}
+
+model Store {
+  id           Int            @id @default(autoincrement())
+  userId       Int            @unique
+  name         String
+  slug         String         @unique
+  description  String?
+  discord      String?
+  whatsapp     String?
+  telegram     String?
+  gameNickname String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime
+  hdRealPerK   Float?
+  User         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  StoreItem    StoreItem[]
+  StorePokemon StorePokemon[]
+  StoreWorld   StoreWorld[]
+}
+
+model StoreItem {
+  id            Int                 @id @default(autoincrement())
+  storeId       Int
+  catalogItemId Int
+  notes         String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime
+  quantity      Int                 @default(1)
+  priceReal     Int?
+  priceHd       Int?
+  serialNumber  String?
+  acquiredAt    String?
+  originWorld   GameWorld?
+  status        StoreListingStatus  @default(ACTIVE)
+  CatalogItem   CatalogItem         @relation(fields: [catalogItemId], references: [wikiPageId])
+  Store         Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([catalogItemId])
+  @@index([storeId])
+}
+
+model StorePokemon {
+  id                                                               Int                   @id @default(autoincrement())
+  storeId                                                          Int
+  pokemonCatalogItemId                                             Int
+  nickname                                                         String?
+  boost                                                            Int?
+  notes                                                            String?
+  pokeballCatalogItemId                                            Int?
+  heldItemCatalogItemId                                            Int?
+  createdAt                                                        DateTime              @default(now())
+  updatedAt                                                        DateTime
+  gender                                                           String?
+  nature                                                           String?
+  world                                                            GameWorld
+  priceReal                                                        Int?
+  priceHd                                                          Int?
+  level                                                            Int?
+  addonCount                                                       Int?
+  extraMoveCount                                                   Int?
+  extraMovesText                                                   String?
+  presetSlotCount                                                  Int?
+  presetSlotsText                                                  String?
+  capturedAt                                                       String?
+  megaStoneCatalogItemId                                           Int?
+  equippedAddonCatalogItemId                                       Int?
+  status                                                            StoreListingStatus    @default(ACTIVE)
+  CatalogItem_StorePokemon_equippedAddonCatalogItemIdToCatalogItem CatalogItem?          @relation("StorePokemon_equippedAddonCatalogItemIdToCatalogItem", fields: [equippedAddonCatalogItemId], references: [wikiPageId])
+  CatalogItem_StorePokemon_heldItemCatalogItemIdToCatalogItem      CatalogItem?          @relation("StorePokemon_heldItemCatalogItemIdToCatalogItem", fields: [heldItemCatalogItemId], references: [wikiPageId])
+  CatalogItem_StorePokemon_megaStoneCatalogItemIdToCatalogItem     CatalogItem?          @relation("StorePokemon_megaStoneCatalogItemIdToCatalogItem", fields: [megaStoneCatalogItemId], references: [wikiPageId])
+  CatalogItem_StorePokemon_pokeballCatalogItemIdToCatalogItem      CatalogItem?          @relation("StorePokemon_pokeballCatalogItemIdToCatalogItem", fields: [pokeballCatalogItemId], references: [wikiPageId])
+  CatalogItem_StorePokemon_pokemonCatalogItemIdToCatalogItem       CatalogItem           @relation("StorePokemon_pokemonCatalogItemIdToCatalogItem", fields: [pokemonCatalogItemId], references: [wikiPageId])
+  Store                                                            Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  StorePokemonAddon                                                StorePokemonAddon[]
+  StorePokemonSticker                                              StorePokemonSticker[]
+
+  @@index([megaStoneCatalogItemId])
+  @@index([pokemonCatalogItemId])
+  @@index([storeId])
+}
+
+model StorePokemonAddon {
+  id                 Int          @id @default(autoincrement())
+  storePokemonId     Int
+  addonCatalogItemId Int
+  CatalogItem        CatalogItem  @relation(fields: [addonCatalogItemId], references: [wikiPageId])
+  StorePokemon       StorePokemon @relation(fields: [storePokemonId], references: [id], onDelete: Cascade)
+
+  @@unique([storePokemonId, addonCatalogItemId])
+  @@index([storePokemonId])
+}
+
+model StorePokemonSticker {
+  id                   Int          @id @default(autoincrement())
+  storePokemonId       Int
+  stickerCatalogItemId Int
+  CatalogItem          CatalogItem  @relation(fields: [stickerCatalogItemId], references: [wikiPageId])
+  StorePokemon         StorePokemon @relation(fields: [storePokemonId], references: [id], onDelete: Cascade)
+
+  @@unique([storePokemonId, stickerCatalogItemId])
+  @@index([storePokemonId])
+}
+
+model StoreWorld {
+  id      Int       @id @default(autoincrement())
+  storeId Int
+  world   GameWorld
+  Store   Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, world])
+  @@index([storeId])
+}
+
+model SyncExecution {
+  id                  String                   @id
+  startedAt           DateTime                 @default(now())
+  completedAt         DateTime?
+  durationMs          Int?
+  status              SyncExecutionStatus      @default(PENDING)
+  category            String
+  sourcePage          String?
+  sourceUrl           String?
+  parserName          String?
+  parserVersion       String?
+  entityCount         Int                      @default(0)
+  rejectedEntityCount Int                      @default(0)
+  catalogItemCount    Int                      @default(0)
+  validationStatus    DatasetValidationStatus?
+  errorMessage        String?
+  metrics             Json?
+  validationReport    Json?
+  qualityScore        Int?
+  createdAt           DateTime                 @default(now())
+  CatalogItemLineage  CatalogItemLineage[]
+  ParserAuditRecord   ParserAuditRecord[]
+  ReplaySnapshot      ReplaySnapshot[]
+
+  @@index([category, startedAt])
+  @@index([status])
+}
+
+model User {
+  id           Int       @id @default(autoincrement())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime
+  email        String    @unique
+  name         String?
+  passwordHash String?
+  firebaseUid  String?   @unique
+  image        String?
+  Listing      Listing[]
+  Store        Store?
+}
+
+model WikiPage {
+  pageId     Int      @id
+  title      String
+  revisionId Int
+  html       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime
+  wikitext   String
+}
+
+model WikiSyncLog {
+  id           Int            @id @default(autoincrement())
+  startedAt    DateTime       @default(now())
+  finishedAt   DateTime?
+  totalSynced  Int            @default(0)
+  status       WikiSyncStatus
+  errorMessage String?
+}
+
+enum DatasetValidationStatus {
+  PASS
+  WARNING
+  FAIL
+}
+
+enum GameWorld {
+  BLUE
+  GREEN
+  RED
+  BLACK
+  PURPLE
+  SILVER
+  GOLD
+}
+
+enum ListingStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum StoreListingStatus {
+  ACTIVE
+  HIDDEN
+  SOLD
+}
+
+enum SyncExecutionStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  VALIDATION_FAILED
+}
+
+enum TradeType {
+  BUY
+  SELL
+}
+
+enum WikiSyncStatus {
+  running
+  completed
+  failed
+  partial_failure
+}

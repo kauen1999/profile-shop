@@ -1,0 +1,926 @@
+/* PokeShopping marketing pages (Landing, Login).
+   Own visual identity, deliberately distinct from the internal app
+   (Catalog / DataMap) styled in App.css.
+
+   Mobile-first: base rules below target the smallest screen with no
+   media query. @media (min-width: ...) blocks progressively enhance the
+   layout for tablet/desktop as the viewport grows. */
+
+.landing {
+  --ps-blue: #2e3a9e;
+  --ps-blue-bright: #4c6fff;
+  --ps-yellow: #ffcb05;
+  --ps-ink: #1a1f3d;
+  --ps-bg: #fff9ec;
+
+  background: var(--ps-bg);
+  color: var(--ps-ink);
+  min-height: 100vh;
+  text-align: left;
+}
+
+.landing h1,
+.landing h2 {
+  font-family: 'Baloo 2', var(--heading, system-ui), sans-serif;
+  color: inherit;
+}
+
+/* ---------- header ---------- */
+
+.landing-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: var(--ps-blue);
+  color: #fff;
+}
+
+.landing-wordmark {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: 'Baloo 2', var(--heading, system-ui), sans-serif;
+  font-weight: 800;
+  font-size: 1.6rem;
+  color: #fff;
+}
+
+.landing-wordmark-link {
+  text-decoration: none;
+}
+
+.landing-pokeball {
+  position: relative;
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--ps-ink);
+  overflow: hidden;
+  background: linear-gradient(
+    to bottom,
+    var(--ps-yellow) 0%,
+    var(--ps-yellow) 46%,
+    var(--ps-ink) 46%,
+    var(--ps-ink) 54%,
+    #fff 54%,
+    #fff 100%
+  );
+  flex-shrink: 0;
+}
+
+.landing-pokeball::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -5px 0 0 -5px;
+  background: #fff;
+  border: 2px solid var(--ps-ink);
+  border-radius: 50%;
+}
+
+.landing-pokeball-sm {
+  width: 16px;
+  height: 16px;
+}
+
+.landing-pokeball-sm::after {
+  width: 5px;
+  height: 5px;
+  margin: -3.5px 0 0 -3.5px;
+  border-width: 1px;
+}
+
+.landing-nav {
+  display: flex;
+  gap: 0.75rem;
+}
+
+/* ---------- buttons ---------- */
+
+.landing-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 1.2rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.92rem;
+  text-decoration: none;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.landing-btn-primary {
+  background: var(--ps-yellow);
+  border-color: var(--ps-yellow);
+  color: var(--ps-ink);
+}
+
+.landing-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(255, 203, 5, 0.45);
+}
+
+.landing-btn-ghost {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.75);
+  color: #fff;
+}
+
+.landing-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Landing.jsx header, logged-in state (2026-07-15) — the "Entrar" ghost
+   button is replaced by the Google profile picture + a link straight to the
+   user's own store. Reuses .landing-btn/.landing-btn-ghost for the pill
+   shape/border, this just adds the avatar + closes the gap between it and
+   the label. */
+.landing-nav-account {
+  gap: 0.5rem;
+}
+
+.landing-nav-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.landing-btn-lg {
+  padding: 0.8rem 1.7rem;
+  font-size: 1.05rem;
+}
+
+.landing-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.landing-btn-outline {
+  background: transparent;
+  border-color: rgba(46, 58, 158, 0.35);
+  color: var(--ps-blue);
+}
+
+.landing-btn-outline:hover {
+  background: rgba(46, 58, 158, 0.08);
+}
+
+.landing-btn-danger {
+  background: transparent;
+  border-color: rgba(220, 53, 69, 0.4);
+  color: #a3202f;
+}
+
+.landing-btn-danger:hover {
+  background: rgba(220, 53, 69, 0.08);
+}
+
+.landing-btn-google {
+  gap: 0.6rem;
+  background: #fff;
+  border-color: rgba(46, 58, 158, 0.2);
+  color: var(--ps-ink);
+  width: 100%;
+}
+
+.landing-btn-google:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(26, 31, 61, 0.15);
+}
+
+/* ---------- hero ---------- */
+
+.landing-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 2.5rem;
+  background: var(--ps-blue);
+  color: #fff;
+  padding: 3rem 1.25rem 3.5rem;
+}
+
+.landing-hero-text {
+  max-width: 100%;
+}
+
+.landing-hero-text h1 {
+  font-size: 2.75rem;
+  line-height: 1.15;
+  margin: 0 0 1.1rem;
+}
+
+.landing-hero-subtitle {
+  font-size: 1.08rem;
+  line-height: 1.6;
+  opacity: 0.92;
+  margin: 0 0 2.2rem;
+}
+
+.landing-hero-cta {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* Overlapping collage look is the base (mobile) style too, just scaled down
+   via --sprite-scale. Every sprite's size/offset below is expressed as
+   calc(<desktop-px> * var(--sprite-scale)) so the @media (min-width: 860px)
+   block only needs to bump the variable back to 1 — the arrangement itself
+   (top/left/right/bottom/rotation/z-index) never has to be duplicated. */
+.landing-hero-sprites {
+  --sprite-scale: 0.6;
+  position: relative;
+  width: calc(380px * var(--sprite-scale));
+  height: calc(360px * var(--sprite-scale));
+  flex-shrink: 0;
+}
+
+.landing-sprite {
+  position: absolute;
+  object-fit: contain;
+  background: var(--ps-bg);
+  border-radius: 50%;
+  padding: calc(0.7rem * var(--sprite-scale));
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.35));
+}
+
+.sprite-charizard {
+  width: calc(150px * var(--sprite-scale));
+  height: calc(150px * var(--sprite-scale));
+  top: 0;
+  right: 0;
+  z-index: 3;
+  transform: rotate(-4deg);
+}
+
+.sprite-eevee {
+  width: calc(108px * var(--sprite-scale));
+  height: calc(108px * var(--sprite-scale));
+  top: calc(55px * var(--sprite-scale));
+  left: 0;
+  z-index: 2;
+  transform: rotate(6deg);
+}
+
+.sprite-sylveon {
+  width: calc(100px * var(--sprite-scale));
+  height: calc(100px * var(--sprite-scale));
+  bottom: calc(55px * var(--sprite-scale));
+  right: calc(40px * var(--sprite-scale));
+  z-index: 2;
+  transform: rotate(-8deg);
+}
+
+.sprite-mimikyu {
+  width: calc(88px * var(--sprite-scale));
+  height: calc(88px * var(--sprite-scale));
+  bottom: 0;
+  left: calc(55px * var(--sprite-scale));
+  z-index: 1;
+  transform: rotate(10deg);
+}
+
+.sprite-lucario {
+  width: calc(118px * var(--sprite-scale));
+  height: calc(118px * var(--sprite-scale));
+  top: calc(150px * var(--sprite-scale));
+  left: calc(140px * var(--sprite-scale));
+  z-index: 1;
+  transform: rotate(-3deg);
+}
+
+.sprite-snorlax {
+  width: calc(130px * var(--sprite-scale));
+  height: calc(130px * var(--sprite-scale));
+  bottom: calc(-10px * var(--sprite-scale));
+  right: calc(150px * var(--sprite-scale));
+  z-index: 0;
+  transform: rotate(5deg);
+}
+
+/* ---------- features ---------- */
+
+.landing-features {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 3.5rem 2rem;
+}
+
+.landing-feature-card {
+  background: #fff;
+  border: 1px solid rgba(46, 58, 158, 0.12);
+  border-radius: 14px;
+  padding: 1.75rem;
+  box-shadow: 0 6px 18px rgba(26, 31, 61, 0.06);
+}
+
+.landing-feature-card h2 {
+  color: var(--ps-blue);
+  font-size: 1.3rem;
+  margin: 0 0 0.6rem;
+}
+
+.landing-feature-card p {
+  margin: 0;
+  line-height: 1.55;
+  opacity: 0.85;
+}
+
+/* ---------- footer ---------- */
+
+.landing-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 2rem;
+  color: var(--ps-blue);
+  opacity: 0.75;
+  font-size: 0.9rem;
+  border-top: 1px solid rgba(46, 58, 158, 0.12);
+}
+
+.landing-footer p {
+  margin: 0;
+}
+
+/* ---------- auth (login) ---------- */
+
+.landing-auth .landing-header {
+  justify-content: flex-start;
+}
+
+/* StoreProfile.jsx's header has a second item (the hamburger menu) besides
+   the wordmark — it needs to be pushed to the far right at every width, not
+   just at desktop. This used to live only inside the
+   @media (min-width: 860px) block below, which is exactly backwards for
+   mobile-first (Regra 6): on a narrow screen the hamburger fell back to
+   `.landing-auth .landing-header`'s `flex-start` above (same specificity,
+   but that rule came first) and sat right next to the logo with a big dead
+   gap on the right, instead of being pushed to the edge. `:has()` gives
+   this the same specificity as the rule above, so placing it after in
+   source order is what makes it win whenever a second item is present,
+   mobile included — no media query needed for this part at all. */
+.landing-header:has(.landing-store-menu) {
+  justify-content: space-between;
+}
+
+.landing-auth-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 3.5rem 1.5rem;
+}
+
+.landing-auth-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 2.5rem;
+  max-width: 420px;
+  width: 100%;
+  box-sizing: border-box;
+  box-shadow: 0 12px 30px rgba(26, 31, 61, 0.12);
+}
+
+.landing-auth-card h1 {
+  color: var(--ps-blue);
+  font-size: 1.9rem;
+  margin: 0 0 0.9rem;
+}
+
+.landing-auth-notice {
+  background: rgba(255, 203, 5, 0.18);
+  border: 1px solid rgba(255, 203, 5, 0.5);
+  color: var(--ps-ink);
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 0 0 1.5rem;
+}
+
+.landing-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 0 0 1.25rem;
+}
+
+.landing-auth-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ps-ink);
+  opacity: 0.85;
+}
+
+.landing-auth-form input {
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(46, 58, 158, 0.25);
+  font-size: 0.95rem;
+  background: var(--ps-bg);
+  color: var(--ps-ink);
+  font-family: inherit;
+}
+
+.landing-auth-form input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.landing-auth-form textarea {
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(46, 58, 158, 0.25);
+  font-size: 0.95rem;
+  background: var(--ps-bg);
+  color: var(--ps-ink);
+  font-family: inherit;
+  resize: vertical;
+  min-height: 4.5rem;
+}
+
+.landing-auth-form textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.landing-auth-slug-preview {
+  margin: -0.5rem 0 0;
+  font-size: 0.82rem;
+  color: var(--ps-blue);
+  opacity: 0.85;
+  word-break: break-word;
+}
+
+.landing-auth-footer {
+  font-size: 0.9rem;
+  margin: 0 0 1rem;
+}
+
+.landing-auth-footer a {
+  color: var(--ps-blue-bright);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.landing-auth-footer a:hover {
+  text-decoration: underline;
+}
+
+.landing-auth-avatar {
+  display: block;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin: 0 0 1.25rem;
+  border: 2px solid var(--ps-yellow);
+}
+
+.landing-auth-error {
+  background: rgba(220, 53, 69, 0.1);
+  border: 1px solid rgba(220, 53, 69, 0.35);
+  color: #a3202f;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 0 0 1.25rem;
+}
+
+.landing-auth-back {
+  font-size: 0.85rem;
+  color: var(--ps-blue-bright);
+  text-decoration: none;
+}
+
+.landing-auth-back:hover {
+  text-decoration: underline;
+}
+
+.landing-auth-field-error {
+  margin: -0.6rem 0 0;
+  font-size: 0.8rem;
+  color: #a3202f;
+}
+
+.landing-auth-success {
+  background: rgba(56, 161, 105, 0.14);
+  border: 1px solid rgba(56, 161, 105, 0.4);
+  color: #1f6e42;
+  padding: 0.65rem 1rem;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  margin: 0 0 1.25rem;
+}
+
+/* ---------- store profile ---------- */
+
+.landing-store-card,
+.landing-store-listings {
+  /* .landing-auth-card defaults to max-width: 420px (right for a login/
+     setup form) — the store profile cards should fill the page instead. */
+  max-width: none;
+}
+
+.landing-store-card {
+  text-align: left;
+  /* Tighter than the default .landing-auth-card padding (2.5rem) — this
+     card is read at a glance (name/apelido/contacts), not filled in like a
+     form, so it doesn't need as much breathing room. */
+  padding: 1.5rem 1.75rem;
+}
+
+.landing-store-card h1 {
+  font-size: 1.6rem;
+  margin: 0 0 0.2rem;
+}
+
+.landing-store-nickname {
+  margin: 0 0 0.6rem;
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+
+.landing-store-description {
+  margin: 0 0 0.75rem;
+  line-height: 1.5;
+  font-size: 0.95rem;
+}
+
+/* Icon-only contact row, right-aligned at the bottom of the card (replaces
+   the earlier full-text "WhatsApp: ..." badges — same info, just surfaced
+   via the app's own recognizable icon + a hover/long-press tooltip instead
+   of a full text line, which is most of what made this card tall). */
+.landing-store-contacts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  margin: 0.75rem 0 0;
+}
+
+.landing-store-contact-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--ps-bg);
+  cursor: default;
+}
+
+.landing-store-contact-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.landing-store-contact-whatsapp {
+  color: #25d366;
+}
+
+.landing-store-contact-discord {
+  color: #5865f2;
+}
+
+.landing-store-contact-telegram {
+  color: #26a5e4;
+}
+
+.landing-store-section {
+  margin: 0 0 1.5rem;
+}
+
+.landing-store-section h2 {
+  font-size: 1.1rem;
+  color: var(--ps-blue);
+  margin: 0 0 0.6rem;
+}
+
+.landing-store-empty {
+  margin: 0;
+  opacity: 0.7;
+  font-size: 0.9rem;
+}
+
+.landing-store-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.landing-store-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+.landing-store-listings .landing-store-section:last-child {
+  margin-bottom: 0;
+}
+
+/* ---------- storefront listing filters (2026-07-15) ----------
+   Client-side only (see StoreProfile.jsx — everything these filters read is
+   already loaded from GET /stores/:slug, no new network call). Mobile-first:
+   base is a single stacked column; the 4-field row below the search box wraps
+   onto as many lines as needed on narrow screens and only tightens up at
+   min-width: 860px. Input/select chrome mirrors
+   AddPokemonListing.css's `.new-listing-form input/select` for a consistent
+   look across the app rather than inventing new form chrome. */
+
+.store-listings-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0 0 1.25rem;
+}
+
+.store-listings-filter-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(46, 58, 158, 0.25);
+  font-size: 0.95rem;
+  background: var(--ps-bg, #fff9ec);
+  color: var(--ps-ink, #1a1f3d);
+  font-family: inherit;
+}
+
+.store-listings-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.store-listings-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ps-ink, #1a1f3d);
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+.store-listings-filter-field select,
+.store-listings-filter-field input {
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid rgba(46, 58, 158, 0.25);
+  font-size: 0.9rem;
+  background: var(--ps-bg, #fff9ec);
+  color: var(--ps-ink, #1a1f3d);
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Price filter (2026-07-15 revision) — Real and HD are independent
+   currencies, so each gets its own compact min/max pair stacked vertically,
+   the two currencies sitting side by side as one unit within the same
+   filter row (requested layout). `-sm` fields are deliberately smaller than
+   the Tipo/Categoria selects above — there are 4 of them in a small space,
+   full-size inputs would dominate the row. */
+.store-listings-filter-price-group {
+  display: flex;
+  gap: 0.75rem;
+  flex: 1 1 220px;
+}
+
+.store-listings-filter-price-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.store-listings-filter-field-sm {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.store-listings-filter-field-sm select,
+.store-listings-filter-field-sm input {
+  padding: 0.4rem 0.55rem;
+  font-size: 0.82rem;
+}
+
+/* ---------- store owner hamburger menu ---------- */
+
+.landing-store-menu {
+  position: relative;
+}
+
+.landing-hamburger {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.landing-hamburger:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.landing-hamburger-bar {
+  display: block;
+  width: 22px;
+  height: 2px;
+  border-radius: 2px;
+  background: #fff;
+}
+
+.landing-store-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(26, 31, 61, 0.18);
+  overflow: hidden;
+  z-index: 10;
+}
+
+.landing-store-menu-item {
+  display: block;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ps-ink);
+  text-decoration: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.landing-store-menu-item:hover {
+  background: rgba(46, 58, 158, 0.08);
+}
+
+.landing-store-menu-item-danger {
+  color: #a3202f;
+}
+
+.landing-store-menu-item-danger:hover {
+  background: rgba(220, 53, 69, 0.08);
+}
+
+/* ---------- responsive (tablet / desktop enhancements) ---------- */
+
+@media (min-width: 860px) {
+  .landing-header {
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.25rem 2rem;
+  }
+
+  .landing-hero {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    text-align: left;
+    padding: 4rem 3rem 6rem;
+  }
+
+  .landing-hero-text {
+    max-width: 560px;
+  }
+
+  .landing-hero-cta {
+    justify-content: flex-start;
+  }
+
+  .landing-hero-sprites {
+    /* Same collage as mobile (arrangement defined once, above), just at full
+       desktop size. */
+    --sprite-scale: 1;
+  }
+
+  .landing-features {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* Storefront filters — 2×3 grid (2026-07-15, requested layout):
+       "search search real"
+       "tipo   cat     hd"
+     Below 860px this whole block doesn't exist — .store-listings-filters
+     stays the plain flex-column it already is, .store-listings-filter-row/
+     .store-listings-filter-price-group stay plain flex-wrap rows (base
+     rules above), completely unchanged. At 860px+, .store-listings-filters
+     itself becomes the grid; the two intermediate wrappers switch to
+     `display: contents` so their children (search input, Tipo/Categoria
+     labels, Real/HD price-cols) become direct grid items placed by the
+     `store-listings-filter-area-*` classes below, instead of duplicating
+     the whole filter markup for a second, desktop-only layout. */
+  .store-listings-filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr 220px;
+    grid-template-areas:
+      'search search real'
+      'tipo   cat     hd';
+    align-items: start;
+    gap: 0.75rem;
+  }
+
+  .store-listings-filter-row,
+  .store-listings-filter-price-group {
+    display: contents;
+  }
+
+  .store-listings-filter-search {
+    grid-area: search;
+    /* Row 1 is as tall as its tallest cell — the search input alone is
+       shorter, so at the grid's shared `align-items: start` it hugged the
+       top of the row with dead space below. Same root cause as
+       `.store-listings-filter-price-col`'s `align-self` below — a grid
+       item shorter than its own row, under a shared top-alignment.
+       `end` (not `center`, per explicit request) anchors it to the row's
+       bottom instead of splitting the slack evenly above/below. */
+    align-self: end;
+  }
+
+  .store-listings-filter-area-tipo {
+    grid-area: tipo;
+  }
+
+  .store-listings-filter-area-categoria {
+    grid-area: cat;
+  }
+
+  .store-listings-filter-area-real {
+    grid-area: real;
+  }
+
+  .store-listings-filter-area-hd {
+    grid-area: hd;
+  }
+
+  /* Mín./Máx. sit side by side within the Real/HD cell on desktop (still
+     stacked on mobile — base rule above, untouched). Shared by both Real
+     and HD (same class, not a per-area override) — Real/HD are already
+     byte-identical in their own CSS (width/padding/gap/flex-direction);
+     what differed was each one's ROW: Real's row (row 1) is exactly as
+     tall as Real itself (the tallest thing there, once search is
+     centered above), so it fills it with zero slack; HD's row (row 2) is
+     dictated by Tipo/Categoria's full-size fields, taller than HD's own
+     `-sm` fields, so under the grid's shared `align-items: start` HD hugged
+     the top with dead space below while Real didn't. `align-self: center`
+     here is a no-op for Real (already fills its row) and centers HD within
+     its taller row — same fix as search above, applied once to the shared
+     class so both areas get it identically instead of a HD-only patch. */
+  .store-listings-filter-price-col {
+    flex-direction: row;
+    align-items: center;
+    align-self: center;
+  }
+
+  .store-listings-filter-price-col .store-listings-filter-field-sm {
+    flex: 1 1 0;
+  }
+}
