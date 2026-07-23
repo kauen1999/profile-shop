@@ -47,8 +47,9 @@ ou de ferramenta).
 | Revisão de performance | Quando houver sintoma real (lentidão medida) | Investigar antes do sintoma é desperdício |
 | Revisão de schema | Antes de qualquer mudança estrutural (regra 4 de `ARCHITECTURE_RULES.md`) | Schema muda raramente |
 | Bootstrap de testes | Uma vez, quando o projeto priorizar isso | Depois de existir, escrever teste vira parte normal de implementar |
-| Bootstrap de CI/CD | Uma vez, quando fizer sentido | Não é um papel recorrente, é um projeto pontual |
+| Bootstrap de CI/CD | ~~Uma vez, quando fizer sentido~~ Feito em 2026-07-22 (`.github/workflows/ci.yml` + branch protection na `main`) | Foi um projeto pontual, não virou papel recorrente — manter/ajustar o workflow é parte normal de implementar dali pra frente |
 | Revisão de release | Antes de publicar uma mudança | Frequência baixa hoje |
+| Revisão de logs de produção | Periodicamente (ex: 1x por semana) ou quando houver suspeita de erro relatado por um usuário | Volume de tráfego baixo hoje — não justifica um serviço de alerta automático (ver `CLAUDE.md`, decisão de log estruturado sem Sentry); checagem manual periódica já cobre o risco real |
 
 ## Crescimento dos papéis
 

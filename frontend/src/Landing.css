@@ -33,7 +33,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  padding: 1rem 1.25rem;
+  padding: 0.5rem 1rem;
   background: var(--ps-blue);
   color: #fff;
 }
@@ -366,6 +366,12 @@
 
 .landing-auth .landing-header {
   justify-content: flex-start;
+  /* 2 classes here beats the plain .landing-header selector (1 class) —
+     including the desktop-only @media (min-width: 860px) override below,
+     which also only targets the less-specific .landing-header — so this
+     single declaration applies at every breakpoint without needing its
+     own media query. */
+  padding: 0.3rem 2rem;
 }
 
 /* StoreProfile.jsx's header has a second item (the hamburger menu) besides
@@ -386,7 +392,7 @@
 .landing-auth-wrap {
   display: flex;
   justify-content: center;
-  padding: 3.5rem 1.5rem;
+  padding: 0;
 }
 
 .landing-auth-card {
@@ -473,6 +479,52 @@
   word-break: break-word;
 }
 
+/* Mundo(s) checkbox group (SetupShop.jsx/StoreSettings.jsx) — a fieldset
+   instead of a plain <label> since this groups 7 independent checkboxes,
+   not one input. Mobile-first: 2 columns fit 375px comfortably without
+   wrapping any single label's text; widens to more columns on larger
+   screens via the same min-width: 860px breakpoint used elsewhere. */
+.landing-auth-fieldset {
+  border: 1px solid rgba(46, 58, 158, 0.25);
+  border-radius: 8px;
+  padding: 0.75rem 0.85rem;
+  margin: 0;
+}
+
+.landing-auth-fieldset legend {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ps-ink);
+  opacity: 0.85;
+  padding: 0 0.3rem;
+}
+
+.landing-auth-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem 0.75rem;
+}
+
+/* Extra specificity (not !important) to win over .landing-auth-form label's
+   flex-column default — a checkbox label is a single row (box + text), not
+   a stacked label-above-input field like every other form control here. */
+.landing-auth-form .landing-auth-checkbox {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ps-ink);
+  opacity: 0.9;
+}
+
+.landing-auth-checkbox input {
+  width: auto;
+  padding: 0;
+  accent-color: var(--ps-blue, #2e3a9e);
+}
+
 .landing-auth-footer {
   font-size: 0.9rem;
   margin: 0 0 1rem;
@@ -537,75 +589,361 @@
 
 /* ---------- store profile ---------- */
 
-.landing-store-card,
-.landing-store-listings {
+.store-header,
+.landing-store-listings,
+.analytics-tab {
   /* .landing-auth-card defaults to max-width: 420px (right for a login/
-     setup form) — the store profile cards should fill the page instead. */
+     setup form) — the store profile cards should fill the page instead.
+     `.analytics-tab` (2026-07-21) was missing this override entirely —
+     the whole Analytics dashboard was stuck squeezed into a 420px-wide
+     login-card box on every screen size, the reported "tudo bugado". */
   max-width: none;
+  /* .landing-auth-card's default box-shadow (there's no border on either —
+     just the shadow) removed for these two specifically, per request. */
+  box-shadow: none;
 }
 
-.landing-store-card {
+.landing-store-listings,
+.analytics-tab {
+  /* .landing-auth-card's default 2.5rem all around left too much dead air
+     above the filter toolbar specifically — tightened just the top. Same
+     tightening applied to .analytics-tab for visual consistency between
+     the two tabs. */
+  padding-top: 1rem;
+}
+
+/* Store header — 2 layouts, one per breakpoint (explicit request): narrow
+   screens keep avatar+nick INSIDE the banner (stacked above the name);
+   wide screens restore the original "floating avatar" design (avatar
+   overlapping the banner/info boundary via negative margin, name beside
+   it in the banner). Both variants' avatar+nick markup is rendered twice
+   in StoreProfile.jsx (.store-header-avatar-block-mobile/-desktop) since
+   a DOM node can't move between 2 different parents based on a media
+   query — this file just toggles which one is visible via display:none. */
+.store-header {
+  --avatar-size: 104px;
+  --avatar-left: 8rem;
+  --avatar-gap: 1.25rem;
   text-align: left;
-  /* Tighter than the default .landing-auth-card padding (2.5rem) — this
-     card is read at a glance (name/apelido/contacts), not filled in like a
-     form, so it doesn't need as much breathing room. */
-  padding: 1.5rem 1.75rem;
-}
-
-.landing-store-card h1 {
-  font-size: 1.6rem;
-  margin: 0 0 0.2rem;
-}
-
-.landing-store-nickname {
-  margin: 0 0 0.6rem;
-  font-size: 0.78rem;
-  opacity: 0.7;
-}
-
-.landing-store-description {
-  margin: 0 0 0.75rem;
-  line-height: 1.5;
-  font-size: 0.95rem;
-}
-
-/* Icon-only contact row, right-aligned at the bottom of the card (replaces
-   the earlier full-text "WhatsApp: ..." badges — same info, just surfaced
-   via the app's own recognizable icon + a hover/long-press tooltip instead
-   of a full text line, which is most of what made this card tall). */
-.landing-store-contacts {
+  padding: 0;
+  border-radius: 0;
+  position: relative;
+  overflow: hidden;
   display: flex;
-  justify-content: flex-end;
-  gap: 0.55rem;
-  margin: 0.75rem 0 0;
+  flex-direction: column;
 }
 
-.landing-store-contact-icon {
+/* Background layers (scrim + real photo + brand-gradient fallback). At
+   narrow widths this also hosts the avatar+nick + name box as stacked
+   children; at wide widths only the name box remains inside it (the
+   avatar moves to .store-header-info below, see the min-width:860px
+   block). */
+.store-header-banner {
+  display: flex;
+  flex-direction: column;
+  min-height: 150px;
+  box-sizing: border-box;
+  padding-top: 1.25rem;
+  background-image: linear-gradient(180deg, rgba(20, 26, 74, 0.12) 0%, rgba(20, 26, 74, 0.55) 100%),
+    var(--banner-photo-url), linear-gradient(135deg, var(--ps-blue, #2e3a9e) 0%, var(--ps-blue-bright, #4c6fff) 100%);
+  background-size: cover;
+  background-position: center;
+}
+
+@media (min-width: 860px) {
+  .store-header-banner {
+    /* Proportion, not an overflow fix. */
+    min-height: 200px;
+    /* Wide screens: the name box is the ONLY child left inside the banner
+       (avatar moved out to .store-header-info) — pin it to the bottom
+       ("posição end", per the original request for this element). */
+    justify-content: flex-end;
+  }
+}
+
+/* Avatar + nick — shared visual styling for both variants (positioning
+   differs per variant/breakpoint below). */
+.store-header-avatar-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.store-header-avatar {
+  width: var(--avatar-size);
+  height: var(--avatar-size);
+  box-sizing: border-box;
+  border-radius: 999px;
+  object-fit: cover;
+  box-shadow: 0 4px 14px rgba(26, 31, 61, 0.3);
+}
+
+/* Shown instead of the <img> when the store's owner has no Google photo —
+   keeps the header's hierarchy structurally identical either way, per
+   explicit decision (never collapse/hide the avatar slot). */
+.store-header-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--ps-blue, #2e3a9e) 0%, var(--ps-blue-bright, #4c6fff) 100%);
+  color: #fff;
+  font-weight: 800;
+  /* Self-referential (scales with the avatar itself), not an independent px value. */
+  font-size: calc(var(--avatar-size) * 0.4);
+  user-select: none;
+}
+
+/* Nick — a pill, since at narrow widths it sits directly on the banner
+   photo and needs its own shape/contrast to stand out (plain text alone
+   wouldn't read reliably against an arbitrary photo). Kept the same pill
+   at wide widths too (where it sits on the plain white info background)
+   for visual consistency between the 2 variants — a dark pill badge reads
+   fine on white too. No "Nick:" label, per earlier request — just the
+   value. */
+.store-header-nickname {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(20, 26, 74, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #fff;
+  white-space: nowrap;
+}
+
+/* ---- Narrow screens (base): avatar+nick inside the banner, centered
+   (per request — the smallest screens center the photo+name in the
+   middle of the banner instead of pinning them to the left). ---- */
+.store-header-avatar-block-mobile {
+  align-self: center;
+}
+
+.store-header-avatar-block-desktop {
+  display: none;
+}
+
+/* Store name's own translucent dark-blue bar. At narrow widths it sits
+   below the avatar block (margin-top spacing), text centered to match;
+   at wide widths (see min-width:860px below) it's repositioned beside
+   the avatar instead, text back to left-aligned. */
+.store-header-name-box {
+  margin-top: 1rem;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 1rem 1.75rem;
+  background-color: rgba(20, 26, 74, 0.6);
+  text-align: center;
+}
+
+/* Selector scoped as .store-header .store-header-name (not just
+   .store-header-name) so its specificity (2 classes) beats the base
+   .landing-auth-card h1 rule (1 class + 1 element) — without this, the
+   base rule's color:var(--ps-blue) wins and the name renders in blue,
+   illegible against the darkened banner photo behind it (caught in
+   verification: computed color was rgb(46,58,158), not white). */
+.store-header .store-header-name {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: #fff;
+  overflow-wrap: break-word;
+  /* min-width:0 lets the h1 (a flex item of .store-header-name-box) wrap
+     instead of refusing to shrink below its own unbroken content width —
+     see the identical fix on .store-header-info below for the fuller
+     explanation of why min-width:0 is needed at every flex level that
+     might need to shrink. */
+  min-width: 0;
+}
+
+.store-header-info {
+  display: flex;
+  box-sizing: border-box;
+  padding: 1.25rem 1.75rem 4rem;
+  /* Defensive — without this, a long unbroken string somewhere in
+     .store-header-details could force this row (and therefore the whole
+     .store-header) wider than the banner above it, since flex items
+     default to a content-based minimum width unless every level in the
+     chain explicitly opts out. Bottom padding (4rem) reserves real
+     clearance for the floating .store-header-share-btn (34px tall,
+     bottom:1.25rem) — anything shorter lets the description's last line
+     sit directly under it. */
+  min-width: 0;
+}
+
+/* ---- Wide screens: restore the original "floating avatar" design —
+   avatar overlaps the banner/info boundary, name sits beside it (not
+   above it) inside the banner. ---- */
+@media (min-width: 860px) {
+  .store-header-avatar-block-mobile {
+    display: none;
+  }
+
+  .store-header-avatar-block-desktop {
+    display: flex;
+    flex-shrink: 0;
+    /* Overrides the shared .store-header-avatar-block rule's align-items:
+       center — when the nick pill below the avatar is wider than the
+       104px circle, centering the block's children shifts the AVATAR
+       itself sideways (whichever direction keeps it centered under the
+       wider pill), throwing off the name box's fixed calc-based left
+       offset by a few px (caught in verification: exact match with no
+       nick, but 3px off with a nick present). flex-start keeps the
+       avatar's own left edge always exactly at --avatar-left, regardless
+       of nick width — the nick pill just extends right of it when wider,
+       instead of the avatar drifting. */
+    align-items: flex-start;
+  }
+
+  /* The overlap technique: with align-items:flex-start on .store-header-
+     info below, the block's own top edge sits exactly at the true
+     banner/info boundary (a real rendered position, not a guessed
+     percentage of the card's height — that's what keeps this exact
+     regardless of how tall the banner/info actually render). A negative
+     top margin on the avatar itself (not the block) of exactly half its
+     own height pulls just the avatar's box up past that edge, leaving
+     the nick caption below it (on .store-header-info's plain white
+     background) unaffected. Self-referential via --avatar-size, so the
+     split stays exact even if the avatar's size ever changes. Matches
+     .store-header-avatar-fallback too, since it also carries the
+     .store-header-avatar class. */
+  .store-header-avatar-block-desktop .store-header-avatar {
+    margin-top: calc(var(--avatar-size) / -2);
+  }
+
+  .store-header-info {
+    /* 2026-07-21: column instead of row — the description used to be a
+       row-sibling of the avatar block (same height, to its right), which
+       read as "beside the avatar", not "below the name" (confirmed by
+       screenshot — see CLAUDE.md). Stacking the two vertically puts the
+       description in its own full-width line right under the avatar row,
+       which itself sits right under the name in the banner above — this
+       is what actually reads as "directly beneath the name" on desktop.
+       align-items:flex-start (not stretch) is required — with stretch,
+       the avatar block would be forced to the same full width as the
+       description below it, and its own internal align-items:center would
+       then center the avatar horizontally inside that wide box instead of
+       pinning it to the left edge, breaking the --avatar-left offset the
+       name box's padding-left calc (below) depends on. */
+    flex-direction: column;
+    align-items: flex-start;
+    /* Vertical gap between the avatar row and the description now (was a
+       horizontal gap between two side-by-side flex items before) — a
+       literal value on purpose, not --avatar-gap: that variable also
+       drives the name box's padding-left calc elsewhere and must stay
+       scoped to that unrelated concern. */
+    gap: 0.75rem;
+    /* Left padding matches --avatar-left exactly (same variable the name
+       box's padding-left below derives from) — the avatar's own left
+       edge here is what the name up in the banner aligns past.
+       padding-top:0 overrides the base rule's 1.25rem (needed at narrow
+       widths, where this row only holds the description) — the overlap
+       math above depends on align-items:flex-start measuring from this
+       row's TRUE top edge, not 1.25rem below it. Caught in verification:
+       without this override, avatarMid landed exactly 20px (the base
+       padding-top) below bannerBottom/infoTop instead of matching them. */
+    padding-top: 0;
+    padding-left: var(--avatar-left);
+  }
+
+  .store-header-name-box {
+    margin-top: 0;
+    /* Sits to the right of where the avatar will be, one section down —
+       left padding derived from the same --avatar-left/-size/-gap
+       driving the avatar itself, never an independently chosen number. */
+    padding-left: calc(var(--avatar-left) + var(--avatar-size) + var(--avatar-gap));
+    /* Resets the mobile-only centering above — the name sits beside the
+       avatar at this width, not centered under it. */
+    text-align: left;
+  }
+}
+
+.store-header-description {
+  margin: 0;
+  /* Was on the now-removed .store-header-details wrapper (2026-07-21 —
+     that div only ever held this one paragraph, removed as dead markup
+     once the description became a direct sibling of the avatar block).
+     Same defensive purpose as before: lets long text wrap inside
+     .store-header-info instead of forcing it (and the whole card) wider
+     than the banner above it. width:100% is new here (the old wrapper
+     had flex:1 1 0, which stretched to fill the row's remaining width
+     when it sat beside the avatar — now .store-header-info is a column
+     and this is a flex-start item, so without an explicit width it would
+     shrink-to-fit instead of spanning the full available width). */
+  width: 100%;
+  min-width: 0;
+  /* Per request — a distinct typeface from the plain inherited default,
+     reusing 'Baloo 2' (already loaded for headings, weight 500 already
+     in the font-weight range pulled from Google Fonts — see index.html —
+     so this doesn't add a new font request) at a lighter weight than the
+     display headings use, so it reads as friendly body text rather than
+     another heading. */
+  font-family: 'Baloo 2', var(--heading, system-ui), sans-serif;
+  font-weight: 500;
+  padding-top: 1rem;
+  line-height: 1.55;
+  font-size: 0.95rem;
+  color: var(--ps-ink, #1a1f3d);
+  opacity: 0.85;
+  /* Readability guard — the card is full-bleed on desktop (no ancestor
+     reintroduces a max-width), so an unconstrained description would run
+     as one very long line. Doesn't affect the banner/card width, just
+     this text column. Belt-and-suspenders with the JS character cap
+     (truncateDescription in StoreProfile.jsx) — that cap is what actually
+     keeps the header's own height/width predictable regardless of how
+     much an owner writes; this just keeps long single words from
+     stretching the line before wrapping. */
+  max-width: 65ch;
+  overflow-wrap: break-word;
+}
+
+/* Compartilhar — icon-only again (per request), floating in the card's
+   bottom-right corner. .store-header already has position:relative, so
+   this anchors to the whole card, not just the info section. */
+.store-header-share-btn {
+  position: absolute;
+  bottom: 1.25rem;
+  right: 1.25rem;
+  flex: none;
+  width: 34px;
+  height: 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: var(--ps-bg);
-  cursor: default;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(46, 58, 158, 0.22);
+  background: var(--ps-bg, #fff9ec);
+  color: var(--ps-ink, #1a1f3d);
+  cursor: pointer;
 }
 
-.landing-store-contact-icon svg {
-  width: 18px;
-  height: 18px;
+.store-header-share-btn svg {
+  width: 16px;
+  height: 16px;
 }
 
-.landing-store-contact-whatsapp {
-  color: #25d366;
+.store-header-share-btn:hover {
+  background: rgba(46, 58, 158, 0.08);
 }
 
-.landing-store-contact-discord {
-  color: #5865f2;
-}
-
-.landing-store-contact-telegram {
-  color: #26a5e4;
+/* Sits just above the button (reads bottom-up from the corner, instead of
+   pushing content below it, since the button itself floats outside the
+   normal flow now). */
+.store-header-share-feedback {
+  position: absolute;
+  bottom: 3.25rem;
+  right: 1.25rem;
+  font-size: 0.75rem;
+  color: var(--ps-ink, #1a1f3d);
+  opacity: 0.75;
+  white-space: nowrap;
 }
 
 .landing-store-section {
@@ -636,7 +974,7 @@
 .landing-store-blocks {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 0;
   width: 100%;
 }
 
@@ -644,95 +982,220 @@
   margin-bottom: 0;
 }
 
-/* ---------- storefront listing filters (2026-07-15) ----------
+/* ---------- storefront listing filters (2026-07-17 reorganization) ----------
    Client-side only (see StoreProfile.jsx — everything these filters read is
-   already loaded from GET /stores/:slug, no new network call). Mobile-first:
-   base is a single stacked column; the 4-field row below the search box wraps
-   onto as many lines as needed on narrow screens and only tightens up at
-   min-width: 860px. Input/select chrome mirrors
-   AddPokemonListing.css's `.new-listing-form input/select` for a consistent
-   look across the app rather than inventing new form chrome. */
+   already loaded from GET /stores/:slug, no new network call). Base (true
+   375×667 minimum) is a deliberate 2-column grid — search spans both
+   columns on its own row, then Tipo+R$ and Categoria+HD each share a row,
+   Categoria in the same column as Tipo so they're always equal width. At
+   min-width: 860px+ this becomes the flat wrapping pill "toolbar" row
+   instead (search + every pill inline, wraps naturally) — see that
+   override below. */
 
 .store-listings-filters {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin: 0 0 1.25rem;
-}
-
-.store-listings-filter-search {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.6rem 0.75rem;
-  border-radius: 8px;
-  border: 1px solid rgba(46, 58, 158, 0.25);
-  font-size: 0.95rem;
-  background: var(--ps-bg, #fff9ec);
-  color: var(--ps-ink, #1a1f3d);
-  font-family: inherit;
-}
-
-.store-listings-filter-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.store-listings-filter-field {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  /* minmax(0, 1fr), not plain 1fr — a plain 1fr track's minimum is the
+     largest min-content size of whatever's inside it (a real grid
+     "blowout" bug), and a bare number <input>'s intrinsic min-content is
+     wide enough on its own to push both columns past the viewport at
+     375px. minmax(0, ...) removes that content-based floor so the
+     flex:1/min-width:0 rules on the items themselves are what actually
+     controls shrinking. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    'search search'
+    'tipo real'
+    'cat hd';
+  align-items: center;
   gap: 0.3rem;
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--ps-ink, #1a1f3d);
-  flex: 1 1 150px;
+  margin: 0 0 0.75rem;
+}
+
+.store-listings-filter-area-search {
+  grid-area: search;
+}
+
+.store-listings-filter-area-tipo {
+  grid-area: tipo;
+}
+
+.store-listings-filter-area-categoria {
+  grid-area: cat;
+}
+
+.store-listings-filter-area-real {
+  grid-area: real;
+}
+
+.store-listings-filter-area-hd {
+  grid-area: hd;
+}
+
+/* Search fills its grid cell (the whole row) instead of the fixed
+   max-width it had as a flex item — at min-width: 860px+ below it goes
+   back to being a constrained-width inline item. */
+.store-listings-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
   min-width: 0;
 }
 
-.store-listings-filter-field select,
-.store-listings-filter-field input {
-  padding: 0.55rem 0.7rem;
-  border-radius: 8px;
-  border: 1px solid rgba(46, 58, 158, 0.25);
-  font-size: 0.9rem;
+.store-listings-search-icon {
+  position: absolute;
+  left: 0.6rem;
+  width: 12px;
+  height: 12px;
+  color: var(--ps-ink, #1a1f3d);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.store-listings-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.28rem 0.55rem 0.28rem 1.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(46, 58, 158, 0.18);
+  font-size: 0.74rem;
   background: var(--ps-bg, #fff9ec);
   color: var(--ps-ink, #1a1f3d);
   font-family: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.store-listings-search-input:focus {
+  outline: none;
+  border-color: var(--ps-blue, #2e3a9e);
+}
+
+/* Tipo — segmented control (3-way toggle) instead of a <select>: the whole
+   point of a segmented control is showing every option at a glance, which a
+   3-option field like this is small enough to afford. `width: 100%` +
+   each button `flex: 1` (base/grid layout only, see min-width: 860px
+   override below) so the 3 buttons evenly divide the grid column's width
+   instead of the control staying content-sized in a space narrower than
+   its natural width. */
+.store-listings-segmented {
+  display: flex;
   width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(46, 58, 158, 0.18);
+  border-radius: 999px;
+  padding: 0.1rem;
+  background: var(--ps-bg, #fff9ec);
+}
+
+.store-listings-segmented button {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 0.24rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--ps-ink, #1a1f3d);
+  opacity: 0.55;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: background 0.15s ease, opacity 0.15s ease, color 0.15s ease;
+}
+
+.store-listings-segmented button:hover {
+  opacity: 0.8;
+}
+
+.store-listings-segmented button.active {
+  background: var(--ps-blue, #2e3a9e);
+  color: #fff;
+  opacity: 1;
+}
+
+.store-listings-category-select {
+  width: 100%;
+  border: 1px solid rgba(46, 58, 158, 0.18);
+  border-radius: 999px;
+  background: var(--ps-bg, #fff9ec);
+  /* Matches .store-listings-search-input exactly (2026-07-18, explicit
+     request) — was 0.7rem, a hair smaller than the search field's 0.74rem;
+     `color` was already the same `--ps-ink` token as every sibling filter
+     field, this just closes the font-size gap so the whole bar reads
+     uniformly. */
+  font-size: 0.74rem;
+  color: var(--ps-ink, #1a1f3d);
+  padding: 0.26rem 0.8rem;
+  font-family: inherit;
+  max-width: 100%;
   box-sizing: border-box;
 }
 
-/* Price filter (2026-07-15 revision) — Real and HD are independent
-   currencies, so each gets its own compact min/max pair stacked vertically,
-   the two currencies sitting side by side as one unit within the same
-   filter row (requested layout). `-sm` fields are deliberately smaller than
-   the Tipo/Categoria selects above — there are 4 of them in a small space,
-   full-size inputs would dominate the row. */
-.store-listings-filter-price-group {
-  display: flex;
-  gap: 0.75rem;
-  flex: 1 1 220px;
+.store-listings-category-select:focus {
+  outline: none;
+  border-color: var(--ps-blue, #2e3a9e);
 }
 
-.store-listings-filter-price-col {
+/* Real/HD — each currency collapses to one pill: a small caps label
+   ("R$"/"HD"), a borderless mín input, an en-dash separator, a borderless
+   máx input. Same information as the old 2×(label+input) stack, a quarter
+   of the footprint. `width: 100%` + inputs `flex: 1` (base/grid layout
+   only) so the pill fills its grid column instead of staying
+   content-sized. */
+.store-listings-price-pill {
   display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
+  width: 100%;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid rgba(46, 58, 158, 0.18);
+  border-radius: 999px;
+  background: var(--ps-bg, #fff9ec);
+  padding: 0.24rem 0.55rem;
+}
+
+.store-listings-price-pill:focus-within {
+  border-color: var(--ps-blue, #2e3a9e);
+}
+
+.store-listings-price-pill-label {
+  font-weight: 700;
+  font-size: 0.62rem;
+  opacity: 0.55;
+  flex: none;
+}
+
+.store-listings-price-pill-sep {
+  opacity: 0.35;
+  font-size: 0.66rem;
+  flex: none;
+}
+
+.store-listings-price-pill input {
   flex: 1 1 0;
   min-width: 0;
+  width: auto;
+  border: none;
+  background: transparent;
+  font-size: 0.7rem;
+  color: var(--ps-ink, #1a1f3d);
+  font-family: inherit;
+  padding: 0;
+  text-align: center;
 }
 
-.store-listings-filter-field-sm {
-  flex: 0 0 auto;
-  font-size: 0.72rem;
-  font-weight: 600;
-  opacity: 0.85;
+.store-listings-price-pill input:focus {
+  outline: none;
 }
 
-.store-listings-filter-field-sm select,
-.store-listings-filter-field-sm input {
-  padding: 0.4rem 0.55rem;
-  font-size: 0.82rem;
+.store-listings-price-pill input::-webkit-outer-spin-button,
+.store-listings-price-pill input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.store-listings-price-pill input[type='number'] {
+  -moz-appearance: textfield;
 }
 
 /* ---------- store owner hamburger menu ---------- */
@@ -810,6 +1273,376 @@
   background: rgba(220, 53, 69, 0.08);
 }
 
+/* ---------- store Anúncios / Analytics tabs (2026-07-23 redesign) ----------
+   Replaces the earlier generic pill/segmented-button look (white outline ->
+   solid blue fill) with an underlined tab treatment carrying real brand
+   identity: Baloo 2 (the same display face used for the wordmark/headings),
+   a thin baseline rule under the whole bar, and a yellow accent bar that
+   grows in under the active tab — same "grows from center" motif as no
+   other element in the app yet, kept simple and cheap (transform: scaleX,
+   no layout shift). */
+
+.store-tabs {
+  display: flex;
+  gap: 1.75rem;
+  margin: 1.25rem 0 1rem;
+  border-bottom: 2px solid rgba(46, 58, 158, 0.12);
+  flex-wrap: wrap;
+}
+
+.store-tab {
+  position: relative;
+  border: none;
+  background: none;
+  padding: 0.55rem 0.05rem 0.8rem;
+  font-family: 'Baloo 2', var(--heading, system-ui), sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: rgba(26, 31, 61, 0.45);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.store-tab:hover {
+  color: var(--ps-ink);
+}
+
+.store-tab::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--ps-yellow);
+  transform: scaleX(0);
+  transition: transform 0.2s ease;
+}
+
+.store-tab-active {
+  color: var(--ps-ink);
+}
+
+.store-tab-active::after {
+  transform: scaleX(1);
+}
+
+/* ---------- Analytics tab content (2026-07-21) ---------- */
+
+.analytics-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.analytics-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+.analytics-stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(46, 58, 158, 0.15);
+  border-radius: 12px;
+  background: var(--ps-bg);
+}
+
+.analytics-stat-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ps-ink);
+  opacity: 0.65;
+}
+
+.analytics-stat-value {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--ps-blue);
+}
+
+.analytics-stat-breakdown {
+  font-size: 0.8rem;
+  color: var(--ps-ink);
+  opacity: 0.7;
+}
+
+.analytics-section-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ps-ink);
+  margin: 0 0 0.75rem;
+}
+
+.analytics-chart-section,
+.analytics-section {
+  min-width: 0;
+}
+
+/* Visits chart + sales pie chart side by side (2026-07-21 follow-up) —
+   same mobile-first pattern already used by .store-listings-columns:
+   stacked on narrow screens, side by side from min-width:860px. */
+.analytics-charts-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+@media (min-width: 860px) {
+  .analytics-charts-row {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .analytics-charts-row .analytics-chart-section {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
+.analytics-chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.analytics-chart-grid {
+  stroke: rgba(26, 31, 61, 0.12);
+  stroke-width: 1;
+}
+
+.analytics-pie-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.analytics-pie-svg {
+  width: 100%;
+  max-width: 160px;
+  height: auto;
+  display: block;
+}
+
+.analytics-pie-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--ps-ink);
+}
+
+.analytics-pie-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.analytics-pie-swatch {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.analytics-top-listings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.analytics-top-listing-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.analytics-top-listing-photo {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--ps-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.analytics-top-listing-photo img {
+  max-width: 85%;
+  max-height: 85%;
+  object-fit: contain;
+}
+
+.analytics-top-listing-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--ps-ink);
+  font-size: 0.88rem;
+}
+
+.analytics-top-listing-kind {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ps-ink);
+  opacity: 0.6;
+}
+
+.analytics-top-listing-views {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--ps-blue);
+  font-size: 0.85rem;
+  min-width: 1.5rem;
+  text-align: right;
+}
+
+.analytics-breakdown-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.analytics-breakdown-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--ps-ink);
+}
+
+.analytics-breakdown-list li span:last-child {
+  font-weight: 700;
+  color: var(--ps-blue);
+}
+
+/* ---------- Analytics refinement (2026-07-21 follow-up) ---------- */
+
+/* VisitsCard — reuses .analytics-stat-tile as its outer box, adds a small
+   row of underlined tabs (Dia/Semana/Mês) between the label and the big
+   number. Reuses .store-tab/.store-tab-active verbatim (same underline
+   language as the Anúncios/Analytics tab switcher one level up in
+   StoreProfile.jsx) — .analytics-visits-tab only trims size/spacing so
+   3 tabs comfortably fit inside a stat tile instead of a full-width bar. */
+.analytics-visits-tabs {
+  display: flex;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  margin: 0.1rem 0 0.35rem;
+}
+
+.analytics-visits-tab {
+  padding: 0.15rem 0.05rem 0.4rem;
+  font-size: 0.78rem;
+}
+
+.analytics-visits-tab::after {
+  height: 2px;
+  bottom: -1px;
+}
+
+/* HOT badge (2026-07-21) — small red pill next to a top-listing name whose
+   isHot flag is true. Sits as a flex sibling of .analytics-top-listing-name
+   (not nested inside it), so it never gets clipped by that span's
+   ellipsis/nowrap truncation. */
+.analytics-hot-badge {
+  flex-shrink: 0;
+  background: rgb(220, 53, 69);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.65rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+}
+
+/* Sales log (2026-07-21) — mobile-first: each row stacks name/price/date
+   vertically at the 375×667 floor (3 pieces of text, incl. a full pt-BR
+   date+time string, would overflow a single line that narrow); from
+   min-width:860px up there's room to lay them out in one row instead. */
+.analytics-sales-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.analytics-sales-log-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid rgba(46, 58, 158, 0.12);
+  border-radius: 10px;
+  background: var(--ps-bg);
+}
+
+.analytics-sales-log-name {
+  font-weight: 700;
+  color: var(--ps-ink);
+  font-size: 0.88rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics-sales-log-price {
+  font-weight: 700;
+  color: var(--ps-blue);
+  font-size: 0.85rem;
+}
+
+.analytics-sales-log-date {
+  font-size: 0.75rem;
+  color: var(--ps-ink);
+  opacity: 0.65;
+}
+
+/* Revert-sale action (2026-07-21 follow-up) — reuses .store-listing-status-btn
+   verbatim (same small outline pill already used for "Vendido"/"Reverter
+   venda" on the Anúncios tab's listing cards), just wrapped so the inline
+   error (when the PATCH fails) sits right next to it instead of a
+   full-width banner. Mobile-first: stacks below the row's own text at the
+   375×667 floor (base rule); becomes an inline flex-shrink:0 block once
+   .analytics-sales-log-row itself goes row-direction from min-width:860px. */
+.analytics-sales-log-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.2rem;
+}
+
+.analytics-sales-log-revert-error {
+  color: #a3202f;
+  font-size: 0.72rem;
+}
+
 /* ---------- responsive (tablet / desktop enhancements) ---------- */
 
 @media (min-width: 860px) {
@@ -846,81 +1679,78 @@
     grid-template-columns: repeat(3, 1fr);
   }
 
-  /* Storefront filters — 2×3 grid (2026-07-15, requested layout):
-       "search search real"
-       "tipo   cat     hd"
-     Below 860px this whole block doesn't exist — .store-listings-filters
-     stays the plain flex-column it already is, .store-listings-filter-row/
-     .store-listings-filter-price-group stay plain flex-wrap rows (base
-     rules above), completely unchanged. At 860px+, .store-listings-filters
-     itself becomes the grid; the two intermediate wrappers switch to
-     `display: contents` so their children (search input, Tipo/Categoria
-     labels, Real/HD price-cols) become direct grid items placed by the
-     `store-listings-filter-area-*` classes below, instead of duplicating
-     the whole filter markup for a second, desktop-only layout. */
+  /* Storefront filters (2026-07-17 reorganization) — the 2-column grid
+     above is deliberately scoped to the 375×667 minimum screen; from here
+     up there's more than enough room for everything on one wrapping row,
+     so this reverts .store-listings-filters back to the flat pill toolbar
+     (search + every pill inline, content-sized) instead of keeping the
+     grid stretched across a much wider card. */
   .store-listings-filters {
-    display: grid;
-    grid-template-columns: 1fr 1fr 220px;
-    grid-template-areas:
-      'search search real'
-      'tipo   cat     hd';
-    align-items: start;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .store-listings-search {
+    width: auto;
+    flex: 1 1 130px;
+    max-width: 190px;
+  }
+
+  .store-listings-segmented {
+    display: inline-flex;
+    width: auto;
+  }
+
+  .store-listings-segmented button {
+    flex: none;
+    padding: 0.24rem 0.65rem;
+    font-size: 0.7rem;
+  }
+
+  .store-listings-category-select {
+    width: auto;
+  }
+
+  .store-listings-price-pill {
+    display: inline-flex;
+    width: auto;
+    padding: 0.22rem 0.6rem;
+  }
+
+  .store-listings-price-pill input {
+    flex: none;
+    width: 2.8rem;
+  }
+
+  /* Analytics stat tiles (2026-07-21) — 1 column on narrow screens (base
+     rule above), 3 across from here up where there's room. (Was 4 columns
+     before the 2026-07-21 refinement merged the old standalone "Receita"
+     tile into "Vendidos" — the grid now holds VisitsCard + 2 stat tiles,
+     not 4.) */
+  .analytics-stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .analytics-sales-log-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
     gap: 0.75rem;
   }
 
-  .store-listings-filter-row,
-  .store-listings-filter-price-group {
-    display: contents;
+  .analytics-sales-log-name {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
-  .store-listings-filter-search {
-    grid-area: search;
-    /* Row 1 is as tall as its tallest cell — the search input alone is
-       shorter, so at the grid's shared `align-items: start` it hugged the
-       top of the row with dead space below. Same root cause as
-       `.store-listings-filter-price-col`'s `align-self` below — a grid
-       item shorter than its own row, under a shared top-alignment.
-       `end` (not `center`, per explicit request) anchors it to the row's
-       bottom instead of splitting the slack evenly above/below. */
-    align-self: end;
+  .analytics-sales-log-price,
+  .analytics-sales-log-date {
+    flex-shrink: 0;
   }
 
-  .store-listings-filter-area-tipo {
-    grid-area: tipo;
-  }
-
-  .store-listings-filter-area-categoria {
-    grid-area: cat;
-  }
-
-  .store-listings-filter-area-real {
-    grid-area: real;
-  }
-
-  .store-listings-filter-area-hd {
-    grid-area: hd;
-  }
-
-  /* Mín./Máx. sit side by side within the Real/HD cell on desktop (still
-     stacked on mobile — base rule above, untouched). Shared by both Real
-     and HD (same class, not a per-area override) — Real/HD are already
-     byte-identical in their own CSS (width/padding/gap/flex-direction);
-     what differed was each one's ROW: Real's row (row 1) is exactly as
-     tall as Real itself (the tallest thing there, once search is
-     centered above), so it fills it with zero slack; HD's row (row 2) is
-     dictated by Tipo/Categoria's full-size fields, taller than HD's own
-     `-sm` fields, so under the grid's shared `align-items: start` HD hugged
-     the top with dead space below while Real didn't. `align-self: center`
-     here is a no-op for Real (already fills its row) and centers HD within
-     its taller row — same fix as search above, applied once to the shared
-     class so both areas get it identically instead of a HD-only patch. */
-  .store-listings-filter-price-col {
-    flex-direction: row;
-    align-items: center;
-    align-self: center;
-  }
-
-  .store-listings-filter-price-col .store-listings-filter-field-sm {
-    flex: 1 1 0;
+  .analytics-sales-log-actions {
+    flex-shrink: 0;
+    margin-top: 0;
   }
 }

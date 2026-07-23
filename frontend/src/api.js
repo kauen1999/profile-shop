@@ -299,6 +299,31 @@ export async function deleteStoreItem(idToken, id) {
   }
 }
 
+// Store Analytics (2026-07-21) — 2 public fire-and-forget tracking pings +
+// 1 owner-only aggregate read. `recordStoreVisit`/`recordListingView` never
+// throw for the caller to worry about beyond a plain rejected promise —
+// callers always attach `.catch(() => {})`, a failed ping (network hiccup,
+// backend asleep) should never surface to a visitor.
+export async function recordStoreVisit(slug) {
+  await fetch(`${API_URL}/stores/${encodeURIComponent(slug)}/visit`, { method: 'POST' });
+}
+
+export async function recordListingView(slug, { kind, listingId }) {
+  await fetch(`${API_URL}/stores/${encodeURIComponent(slug)}/listing-view`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind, listingId }),
+  });
+}
+
+export async function getStoreAnalytics(idToken) {
+  const res = await fetch(`${API_URL}/stores/me/analytics`, {
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+  if (!res.ok) throw new Error(`Erro ${res.status} ao buscar analytics.`);
+  return res.json();
+}
+
 export const api = {
   getCatalogItems: (params) => request(`/catalog-items${buildQuery(params)}`),
   getCatalogFilters: () => request('/catalog-items/filters'),
@@ -320,4 +345,7 @@ export const api = {
   createStore,
   updateStore,
   getStoreBySlug,
+  recordStoreVisit,
+  recordListingView,
+  getStoreAnalytics,
 };

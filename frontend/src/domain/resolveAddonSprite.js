@@ -31,17 +31,31 @@ function findAddonCompatibility(addonCatalogItem, pokemonWikiTitle) {
   );
 }
 
-// Raw lookup (no fallback) — the looktype URL for this species/shininess
-// straight from the raw CatalogItem's extractedFields.addonCompatibilities,
-// or null if there's no match / no compatibility data at all. Exported
-// separately from resolveAddonLooktypeUrl below because the two call sites
-// need different fallbacks when this comes back empty (the addon's own
-// icon in the storefront modal, the base Pokémon sprite in the listing
-// form's preview).
+// Shared 2-tier preference: the exact shininess variant, else the *other*
+// color of the same composite. The exact variant is a real, permanent gap
+// for some combinations — not every addon had both colors captured from
+// the wiki (confirmed, e.g., "Christmas Helper Addon" never got a shiny
+// Gardevoir composite). The Pokémon wearing the addon in the wrong color is
+// still far more useful than a completely generic addon icon, so try that
+// before giving up. Returns null if neither is usable.
+function pickWithShininessFallback(normalUrl, shinyUrl, isShiny) {
+  const preferred = isShiny ? shinyUrl : normalUrl;
+  if (isMigratedImageUrl(preferred)) return preferred;
+  const other = isShiny ? normalUrl : shinyUrl;
+  return isMigratedImageUrl(other) ? other : null;
+}
+
+// Raw lookup — the looktype URL for this species/shininess straight from
+// the raw CatalogItem's extractedFields.addonCompatibilities, or null if
+// there's no match / no compatibility data at all. Exported separately
+// from resolveAddonLooktypeUrl below because the two call sites need
+// different fallbacks when this comes back empty (the addon's own icon in
+// the storefront modal, the base Pokémon sprite in the listing form's
+// preview).
 export function findAddonLooktypeUrl(addonCatalogItem, pokemonWikiTitle, isShiny) {
   const compatibility = findAddonCompatibility(addonCatalogItem, pokemonWikiTitle);
-  const preferred = isShiny ? compatibility?.looktypeShinyImageUrl : compatibility?.looktypeImageUrl;
-  return isMigratedImageUrl(preferred) ? preferred : null;
+  if (!compatibility) return null;
+  return pickWithShininessFallback(compatibility.looktypeImageUrl, compatibility.looktypeShinyImageUrl, isShiny);
 }
 
 // Resolves the sprite that shows the Pokémon actually wearing this addon
@@ -52,4 +66,18 @@ export function findAddonLooktypeUrl(addonCatalogItem, pokemonWikiTitle, isShiny
 // unusable in the real app.
 export function resolveAddonLooktypeUrl(addonCatalogItem, pokemonWikiTitle, isShiny) {
   return findAddonLooktypeUrl(addonCatalogItem, pokemonWikiTitle, isShiny) || addonCatalogItem?.imageUrl || null;
+}
+
+// Same resolution, but for the *flattened* shape GET /store-pokemon-options/
+// addons already returns (`{ wikiPageId, name, imageUrl, looktypeImageUrl,
+// looktypeShinyImageUrl }`) — already resolved server-side for one specific
+// species, so no extractedFields/compatibility lookup needed here, just the
+// same shininess-fallback-then-icon preference.
+export function resolveFlatAddonSpriteUrl(addonOption, isShiny) {
+  const preferred = pickWithShininessFallback(
+    addonOption?.looktypeImageUrl,
+    addonOption?.looktypeShinyImageUrl,
+    isShiny
+  );
+  return preferred || addonOption?.imageUrl || null;
 }

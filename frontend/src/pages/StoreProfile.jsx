@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../firebase';
-import { api, getMyStore, getStoreBySlug } from '../api';
+import { API_URL, api, getMyStore, getStoreBySlug } from '../api';
 import { useFetch } from '../hooks/useFetch';
 import { FabSpeedDial } from '../components/FabSpeedDial';
 import { StoreListingCard } from '../components/StoreListingCard';
 import { WordmarkLink } from '../components/WordmarkLink';
+import { AnalyticsTab } from '../components/AnalyticsTab';
 import { buildStoreExportText } from '../domain/buildExportText';
+import { buildStoreWhatsappAdText } from '../domain/buildWhatsappAdText';
 import { buildListingSearchText } from '../domain/buildListingSearchText';
 import { formatCategoryLabel } from '../domain/formatCategoryLabel';
 import '../Landing.css';
@@ -58,30 +60,82 @@ function normalizeListings(store) {
   return [...items, ...pokemon].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-// Hand-drawn simplified brand glyphs (single <path>, colored via `fill`) —
-// same self-contained spirit as the CSS-only .landing-pokeball icon, no
-// icon-library dependency added for three icons.
-function WhatsAppIcon(props) {
+// Generic "share" glyph (nodes-and-lines) — not a brand logo, the standard
+// cross-platform symbol for sharing a link.
+function ShareIcon(props) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
-      <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.39 1.26 4.81L2 22l5.42-1.42a9.87 9.87 0 0 0 4.62 1.18h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.64-1.03-5.13-2.9-6.99A9.82 9.82 0 0 0 12.04 2zm0 1.67c2.19 0 4.25.85 5.79 2.4a8.18 8.18 0 0 1 2.41 5.83c0 4.55-3.7 8.24-8.25 8.24a8.2 8.2 0 0 1-4.19-1.15l-.3-.18-3.22.84.86-3.13-.2-.32a8.15 8.15 0 0 1-1.26-4.35c0-4.55 3.71-8.18 8.36-8.18zm-4.42 4.6c-.16 0-.42.06-.64.31-.22.25-.85.83-.85 2.02s.87 2.34 1 2.5c.12.16 1.7 2.7 4.19 3.68 2.06.82 2.48.66 2.93.62.45-.04 1.44-.59 1.65-1.16.2-.57.2-1.06.14-1.16-.06-.1-.22-.16-.46-.28-.24-.12-1.44-.71-1.66-.79-.22-.08-.39-.12-.55.12-.16.24-.63.79-.77.95-.14.16-.28.18-.52.06-.24-.12-1.02-.38-1.94-1.2-.72-.64-1.2-1.43-1.34-1.67-.14-.24-.02-.37.11-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.55-1.34-.76-1.83-.2-.48-.4-.42-.55-.42h-.47z" />
+      <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L7.04 9.81C6.5 9.31 5.79 9 5 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z" />
     </svg>
   );
 }
 
-function DiscordIcon(props) {
+// Standard magnifying-glass glyph for the filter search bar (2026-07-16
+// redesign) — same "generic UI symbol, not a brand mark" spirit as
+// ShareIcon above.
+function SearchIcon(props) {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
-      <path d="M20.32 5.37a17.9 17.9 0 0 0-4.4-1.36c-.19.34-.4.79-.55 1.15a16.6 16.6 0 0 0-4.94 0c-.15-.36-.37-.81-.56-1.15-1.51.26-2.98.71-4.4 1.36C2.6 9.24 1.86 13 2.22 16.72a18 18 0 0 0 5.5 2.79c.44-.6.84-1.24 1.18-1.92-.65-.24-1.27-.54-1.86-.89.16-.11.31-.23.46-.35a12.9 12.9 0 0 0 10.98 0c.15.13.3.24.46.35-.59.35-1.21.65-1.86.89.34.68.74 1.32 1.18 1.92a18 18 0 0 0 5.5-2.79c.43-4.3-.7-8.02-2.94-11.35zM9.68 14.45c-.98 0-1.78-.9-1.78-2s.78-2 1.78-2 1.8.9 1.78 2c0 1.1-.79 2-1.78 2zm5.65 0c-.98 0-1.78-.9-1.78-2s.78-2 1.78-2 1.8.9 1.78 2c0 1.1-.78 2-1.78 2z" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" {...props}>
+      <circle cx="11" cy="11" r="7" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
     </svg>
   );
 }
 
-function TelegramIcon(props) {
+// Fallback avatar content (store header, 2026-07-17 redesign) — used only
+// when the owner has no Google photo (store.User?.image), so the avatar
+// slot stays structurally present either way.
+function getStoreInitial(name) {
+  return name.trim().charAt(0).toUpperCase() || '?';
+}
+
+// Store header description cap (2026-07-17) — an unbounded description can
+// grow the header's own layout height a lot (and, with an unbroken long
+// string and no wrapping, even its width) — capped at a fixed character
+// count so the header's proportions never depend on how much text an
+// owner happened to write. Cuts at the last whole word within the limit
+// (never mid-word) before appending the ellipsis.
+const STORE_HEADER_DESCRIPTION_LIMIT = 220;
+
+function truncateDescription(text, limit = STORE_HEADER_DESCRIPTION_LIMIT) {
+  const trimmed = text.trim();
+  if (trimmed.length <= limit) return trimmed;
+  const cut = trimmed.slice(0, limit);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > 0 ? cut.slice(0, lastSpace) : cut).trim()}…`;
+}
+
+// The 3 real CatalogItem categories a Pokémon listing's underlying item can
+// have (see normalizeListings above and CLAUDE.md's "Correção do filtro de
+// categoria" entry — Pokémon rows resolve a real `category` too, not just
+// Item rows). Used to scope the category <select>'s options to whichever
+// kind is selected in the Tipo filter (2026-07-18, explicit request).
+const POKEMON_CATALOG_CATEGORIES = ['pokemon', 'pokemon-shiny', 'cherish-ball-pokemon'];
+
+// "Ver mais" page sizes (2026-07-18, explicit request) — 5 per column when
+// Tipo === 'all' (each column paginates on its own), 10 total (5+5, split
+// the same way the columns already balance a single-kind result) when Tipo
+// is narrowed to just Pokémon or just Item. See the pagination state/effect
+// and the column-split logic inside the component below.
+const ALL_TYPE_PAGE_SIZE = 5;
+const SINGLE_TYPE_PAGE_SIZE = 10;
+
+// Avatar+nick content, shared between the 2 layout variants below
+// (.store-header-avatar-block-mobile / -desktop) — same markup rendered
+// twice (CSS toggles which one is visible per breakpoint, see Landing.css),
+// so this avoids literally duplicating the JSX at each call site.
+function renderAvatarContent(store) {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
-      <path d="M21.05 3.35 2.7 10.53c-1.24.5-1.23 1.2-.23 1.5l4.7 1.47 1.8 5.62c.22.6.37.84.77.84.32 0 .47-.15.65-.32l1.86-1.8 4.66 3.45c.86.48 1.47.23 1.69-.8l3.06-14.4c.32-1.27-.48-1.83-1.61-1.34zM8.5 13.86 17.94 8c.44-.27.85-.12.51.18l-7.63 6.9-.3 3.24z" />
-    </svg>
+    <>
+      {store.User?.image ? (
+        <img src={store.User.image} alt="" className="store-header-avatar" />
+      ) : (
+        <div className="store-header-avatar store-header-avatar-fallback" aria-hidden="true">
+          {getStoreInitial(store.name)}
+        </div>
+      )}
+      {store.gameNickname && <p className="store-header-nickname">{store.gameNickname}</p>}
+    </>
   );
 }
 
@@ -95,11 +149,39 @@ export function StoreProfile() {
   // rendering the page. Stays false for anonymous visitors and for anyone
   // viewing a store that isn't their own.
   const [isOwner, setIsOwner] = useState(false);
+  // Owner-only ID token (2026-07-21), captured by the same effect that
+  // resolves isOwner below — needed by AnalyticsTab's authenticated
+  // GET /stores/me/analytics call. Stays null for anonymous visitors.
+  const [idToken, setIdToken] = useState(null);
+  // Anúncios / Analytics tab switcher (2026-07-21) — only ever rendered/
+  // reachable when isOwner, defaults to the existing listings view.
+  const [activeTab, setActiveTab] = useState('anuncios'); // anuncios | analytics
+  // Switching tabs re-renders a much shorter/taller content block below the
+  // tab bar — without this, the browser clamps the current scroll offset
+  // down to whatever fits the new (often shorter) content, which reads as
+  // "jumping to the top of the page". Remembered per tab (not a single
+  // shared value) so going Anúncios -> Analytics -> Anúncios restores the
+  // original depth on Anúncios, rather than wherever Analytics happened to
+  // leave it. Captured at click time and restored synchronously via
+  // useLayoutEffect, right after the new tab's content is in the DOM but
+  // before the browser paints — avoids a visible flash back down.
+  const scrollPositionsRef = useRef({ anuncios: 0, analytics: 0 });
+  function handleTabChange(tab) {
+    scrollPositionsRef.current[activeTab] = window.scrollY;
+    setActiveTab(tab);
+  }
+  useLayoutEffect(() => {
+    window.scrollTo(0, scrollPositionsRef.current[activeTab]);
+  }, [activeTab]);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   // Transient feedback for a failed Ocultar/Mostrar/Marcar-vendido/Excluir
   // action — cleared automatically after a few seconds, never blocking.
   const [actionError, setActionError] = useState('');
+  // Transient feedback for the "Compartilhar" button (share-sheet unavailable
+  // → clipboard fallback) — same auto-clear-after-a-few-seconds pattern as
+  // actionError above, own state since it's unrelated to listing actions.
+  const [shareFeedback, setShareFeedback] = useState('');
 
   // Storefront filter bar (2026-07-15) — entirely client-side, no new network
   // calls: every field these filters read against is already present in
@@ -113,6 +195,39 @@ export function StoreProfile() {
   const [priceMaxReal, setPriceMaxReal] = useState('');
   const [priceMinHd, setPriceMinHd] = useState('');
   const [priceMaxHd, setPriceMaxHd] = useState('');
+
+  // "Ver mais" pagination (2026-07-18, explicit request) — purely a render
+  // cap on data already fetched in one shot via GET /stores/:slug, not a
+  // second network call. Two independent counters (Tipo === 'all', one
+  // Pokémon column + one Item column, each growing on its own) vs. one
+  // shared counter (Tipo narrowed to a single kind, still split into 2
+  // balanced columns, but revealed together) — see the split logic below
+  // for how each is actually used.
+  const [visibleLeftCount, setVisibleLeftCount] = useState(ALL_TYPE_PAGE_SIZE);
+  const [visibleRightCount, setVisibleRightCount] = useState(ALL_TYPE_PAGE_SIZE);
+  const [visibleSingleCount, setVisibleSingleCount] = useState(SINGLE_TYPE_PAGE_SIZE);
+
+  // Resets pagination back to the initial page size whenever any filter
+  // changes — without this, switching filters after clicking "Ver mais" a
+  // few times would leave the counters at a stale, confusing offset instead
+  // of starting the new result set from the top.
+  useEffect(() => {
+    setVisibleLeftCount(ALL_TYPE_PAGE_SIZE);
+    setVisibleRightCount(ALL_TYPE_PAGE_SIZE);
+    setVisibleSingleCount(SINGLE_TYPE_PAGE_SIZE);
+  }, [typeFilter, categoryFilter, searchQuery, priceMinReal, priceMaxReal, priceMinHd, priceMaxHd]);
+
+  // Category options are scoped to the selected Tipo (2026-07-18, explicit
+  // request) — a previously-selected category can become invalid for the
+  // new Tipo (e.g. "Shiny" selected, then switching to "Itens"), which
+  // would otherwise silently zero out every result (the filter still
+  // compares listing.category against the stale value) without any visible
+  // explanation. Resetting on every Tipo change is simpler and more
+  // predictable than trying to detect exactly when the current value
+  // becomes invalid.
+  useEffect(() => {
+    setCategoryFilter('');
+  }, [typeFilter]);
 
   // Every real catalog category (not just the ones this store happens to
   // have listed right now) — requested explicitly, so the filter can be
@@ -144,15 +259,17 @@ export function StoreProfile() {
 
   useEffect(() => {
     setIsOwner(false);
+    setIdToken(null);
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) return;
 
       try {
-        const idToken = await firebaseUser.getIdToken();
-        const { store: myStore } = await getMyStore(idToken);
+        const freshIdToken = await firebaseUser.getIdToken();
+        const { store: myStore } = await getMyStore(freshIdToken);
         if (myStore && myStore.slug === slug) {
           setIsOwner(true);
+          setIdToken(freshIdToken);
         }
       } catch {
         // Falha na checagem de dono (token expirado, backend fora do ar) —
@@ -162,6 +279,17 @@ export function StoreProfile() {
 
     return unsubscribe;
   }, [slug]);
+
+  // Analytics visit ping (2026-07-21) — fire-and-forget, never surfaced to
+  // the visitor on failure. Known/accepted race: isOwner starts false and
+  // only resolves after onAuthStateChanged fires, so an owner viewing their
+  // own store can generate one stray visit before their own auth state
+  // settles — accepted 1-row noise cost per the approved plan, no
+  // debounce/delay added to "fix" it.
+  useEffect(() => {
+    if (!slug || isOwner) return;
+    api.recordStoreVisit(slug).catch(() => {});
+  }, [slug, isOwner]);
 
   // Closes the hamburger dropdown on any click outside of it — standard
   // ref + document mousedown listener pattern, only attached while the menu
@@ -185,6 +313,39 @@ export function StoreProfile() {
     const timer = setTimeout(() => setActionError(''), 4000);
     return () => clearTimeout(timer);
   }, [actionError]);
+
+  useEffect(() => {
+    if (!shareFeedback) return undefined;
+    const timer = setTimeout(() => setShareFeedback(''), 4000);
+    return () => clearTimeout(timer);
+  }, [shareFeedback]);
+
+  // "Compartilhar" — prefers the native share sheet (mobile browsers, most
+  // desktop browsers too), which lets the visitor pick WhatsApp/Telegram/
+  // etc. directly; falls back to copying the store's public URL to the
+  // clipboard when the Web Share API isn't available. A user dismissing the
+  // native share sheet rejects the promise with an AbortError — not a
+  // failure to surface, so only the clipboard-fallback path reports
+  // anything back via shareFeedback.
+  async function handleShare() {
+    const url = `${window.location.origin}/${slug}`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: store.name, url });
+      } catch {
+        // Cancelled by the user, or share failed silently — nothing to show.
+      }
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareFeedback('Link copiado!');
+    } catch {
+      setShareFeedback('Não foi possível copiar o link.');
+    }
+  }
 
   async function handleLogout() {
     await signOut(auth);
@@ -219,6 +380,31 @@ export function StoreProfile() {
     }
   }
 
+  // "Exportar pra WhatsApp" (2026-07-21) — separate from "Exportar
+  // Anúncios" above: this one is meant to be pasted straight into a sales
+  // group, not re-imported, so it's clipboard-only (no .txt download — there's
+  // nothing to keep/reimport from a WhatsApp-formatted post) and reuses the
+  // same `shareFeedback` state/timer already used by handleShare for the
+  // toast message. buildStoreWhatsappAdText returns '' when there's nothing
+  // ACTIVE-with-a-price to show — that's reported instead of copying an
+  // empty string.
+  async function handleExportWhatsapp() {
+    setMenuOpen(false);
+    const text = buildStoreWhatsappAdText(store);
+
+    if (!text) {
+      setShareFeedback('Nenhum anúncio com preço pra exportar.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setShareFeedback('Texto copiado!');
+    } catch {
+      setShareFeedback('Não foi possível copiar o texto.');
+    }
+  }
+
   // Replaces the raw StoreItem/StorePokemon row (by kind+id) inside `store`
   // state with whatever `updater` returns — shared by the optimistic status
   // update and its revert-on-failure below.
@@ -228,6 +414,19 @@ export function StoreProfile() {
       ...prev,
       [key]: prev[key].map((raw) => (raw.id === id ? updater(raw) : raw)),
     }));
+  }
+
+  // Keeps this page's own `store` state in sync when a listing's status
+  // changes from OUTSIDE the Anúncios tab (2026-07-21 follow-up) — today
+  // that's only the Analytics tab's "Reverter venda" action in the sales
+  // log. AnalyticsTab already does its own PATCH + refetches its own
+  // analytics payload (so its stat tiles/log stay correct); this is purely
+  // "also update the Anúncios tab's cached copy of this row" so a reverted
+  // sale reappears there without needing a full page reload — no network
+  // call happens here, `replaceRawListing` already exists for exactly this
+  // kind of local-state patch.
+  function syncListingStatus(kind, id, status) {
+    replaceRawListing(kind, id, (raw) => ({ ...raw, status, soldAt: status === 'SOLD' ? raw.soldAt : null }));
   }
 
   // Ocultar/Mostrar and Marcar como vendido/Reverter venda both funnel
@@ -297,9 +496,6 @@ export function StoreProfile() {
             <p className="landing-auth-notice">
               Não existe nenhuma loja com esse endereço. Confira o link ou volte para a página inicial.
             </p>
-            <Link to="/" className="landing-auth-back">
-              ← Voltar para a página inicial
-            </Link>
           </div>
         </div>
       </div>
@@ -318,9 +514,6 @@ export function StoreProfile() {
             <p className="landing-auth-notice">
               Não conseguimos falar com o servidor agora. Tente de novo em instantes.
             </p>
-            <Link to="/" className="landing-auth-back">
-              ← Voltar para a página inicial
-            </Link>
           </div>
         </div>
       </div>
@@ -332,21 +525,37 @@ export function StoreProfile() {
   // CLAUDE.md's "Listagens da loja" section), so this filter is the only
   // thing standing between a HIDDEN/SOLD listing and a visitor's screen.
   const allListings = normalizeListings(store);
-  const visibleListings = isOwner ? allListings : allListings.filter((listing) => listing.status === 'ACTIVE');
+  // Sold listings leave the Anúncios tab entirely for the owner too
+  // (2026-07-21 follow-up) — they're no longer "an ad you're managing",
+  // they're a completed sale tracked in the Analytics dashboard's sales
+  // log instead. Hidden listings are unaffected — still visible/dimmed to
+  // the owner, since Hidden is a temporary self-toggle they manage here,
+  // unlike Sold. A visitor's view is unchanged (ACTIVE only).
+  const visibleListings = isOwner
+    ? allListings.filter((listing) => listing.status !== 'SOLD')
+    : allListings.filter((listing) => listing.status === 'ACTIVE');
 
-  // Category filter is only meaningful for Item listings — Pokémon listings
-  // have no comparable "category" concept exposed to shoppers, so picking a
-  // real category naturally excludes them (no `CatalogItem.category` to
-  // match), which is intended, not a bug to work around. Options list every
-  // real catalog category (requested explicitly — lets a shopper browse
-  // toward a category this store doesn't happen to have anything in yet),
-  // not just the ones currently present in `visibleListings` — same
-  // `GET /catalog-items/filters` endpoint Catalog.jsx already uses for its
-  // own category `<select>`. Sorted alphabetically by display label (the
-  // API's own order is by catalog-wide count, not useful for scanning a
-  // ~19-item dropdown by name).
+  // Options list every real catalog category (requested explicitly — lets a
+  // shopper browse toward a category this store doesn't happen to have
+  // anything in yet), not just the ones currently present in
+  // `visibleListings` — same `GET /catalog-items/filters` endpoint
+  // Catalog.jsx already uses for its own category `<select>`. Sorted
+  // alphabetically by display label (the API's own order is by
+  // catalog-wide count, not useful for scanning a ~19-item dropdown by
+  // name).
+  //
+  // Scoped to the selected Tipo (2026-07-18, explicit request): "Todos"
+  // shows every category; "Pokémon" narrows to just the 3 Pokémon-shaped
+  // categories (see POKEMON_CATALOG_CATEGORIES); "Itens" shows everything
+  // except those 3 (every category is a real item type, since Pokémon rows
+  // only ever resolve to those 3 specific values).
   const categoryOptions = (catalogFilters?.categories || [])
     .map((c) => c.value)
+    .filter((value) => {
+      if (typeFilter === 'pokemon') return POKEMON_CATALOG_CATEGORIES.includes(value);
+      if (typeFilter === 'item') return !POKEMON_CATALOG_CATEGORIES.includes(value);
+      return true;
+    })
     .sort((a, b) => formatCategoryLabel(a).localeCompare(formatCategoryLabel(b)));
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
@@ -384,6 +593,44 @@ export function StoreProfile() {
 
     return true;
   });
+
+  // 2-column layout (2026-07-18, explicit request): with "Todos" selected,
+  // the 2 columns are a natural kind split (Pokémon left, Items right).
+  // With the type filter narrowed to just one kind, there's no second kind
+  // left to give the right column, so instead the SAME kind's listings are
+  // divided evenly across both columns (a balanced 2-column grid of one
+  // kind, not "left column always Pokémon"). filteredListings is already
+  // ordered (createdAt desc, from the backend) — slicing it in half
+  // preserves that order within each column instead of re-sorting.
+  //
+  // "Ver mais" pagination (2026-07-18, follow-up): each branch additionally
+  // caps what's actually rendered. Tipo === 'all' caps each kind's full
+  // list independently (visibleLeftCount/visibleRightCount, one "Ver mais"
+  // per column). A single kind caps the combined list first
+  // (visibleSingleCount, one shared "Ver mais"), THEN splits — applying
+  // Math.ceil(length/2) to the already-capped slice (not the full filtered
+  // list) is what keeps "10 visible" landing on exactly 5+5, "20 visible"
+  // on 10+10, etc., instead of a split point that drifts independently of
+  // how much is actually shown.
+  let leftColumnListings;
+  let rightColumnListings;
+  let showMoreLeft = false;
+  let showMoreRight = false;
+  let showMoreSingle = false;
+  if (typeFilter === 'all') {
+    const allLeft = filteredListings.filter((listing) => listing.kind === 'pokemon');
+    const allRight = filteredListings.filter((listing) => listing.kind === 'item');
+    leftColumnListings = allLeft.slice(0, visibleLeftCount);
+    rightColumnListings = allRight.slice(0, visibleRightCount);
+    showMoreLeft = allLeft.length > visibleLeftCount;
+    showMoreRight = allRight.length > visibleRightCount;
+  } else {
+    const visibleSlice = filteredListings.slice(0, visibleSingleCount);
+    const splitIndex = Math.ceil(visibleSlice.length / 2);
+    leftColumnListings = visibleSlice.slice(0, splitIndex);
+    rightColumnListings = visibleSlice.slice(splitIndex);
+    showMoreSingle = filteredListings.length > visibleSingleCount;
+  }
 
   return (
     <div className="landing landing-auth">
@@ -432,6 +679,14 @@ export function StoreProfile() {
                 <button
                   type="button"
                   role="menuitem"
+                  className="landing-store-menu-item"
+                  onClick={handleExportWhatsapp}
+                >
+                  Exportar pra WhatsApp
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
                   className="landing-store-menu-item landing-store-menu-item-danger"
                   onClick={handleLogout}
                 >
@@ -445,46 +700,94 @@ export function StoreProfile() {
 
       <div className="landing-auth-wrap">
         <div className="landing-store-blocks">
-          <div className="landing-auth-card landing-store-card">
-            <h1>{store.name}</h1>
-            {store.gameNickname && (
-              <p className="landing-store-nickname">Dono: {store.gameNickname}</p>
-            )}
-            {store.description && <p className="landing-store-description">{store.description}</p>}
-
-            {(store.whatsapp || store.discord || store.telegram) && (
-              <div className="landing-store-contacts">
-                {store.whatsapp && (
-                  <span
-                    className="landing-store-contact-icon landing-store-contact-whatsapp"
-                    title={`WhatsApp: ${store.whatsapp}`}
-                    aria-label={`WhatsApp: ${store.whatsapp}`}
-                  >
-                    <WhatsAppIcon />
-                  </span>
-                )}
-                {store.discord && (
-                  <span
-                    className="landing-store-contact-icon landing-store-contact-discord"
-                    title={`Discord: ${store.discord}`}
-                    aria-label={`Discord: ${store.discord}`}
-                  >
-                    <DiscordIcon />
-                  </span>
-                )}
-                {store.telegram && (
-                  <span
-                    className="landing-store-contact-icon landing-store-contact-telegram"
-                    title={`Telegram: ${store.telegram}`}
-                    aria-label={`Telegram: ${store.telegram}`}
-                  >
-                    <TelegramIcon />
-                  </span>
-                )}
+          <div className="landing-auth-card store-header">
+            {/* Store header — 2 layouts, one per breakpoint (per request),
+                both rendered and toggled via display:none in Landing.css
+                (@media min-width:860px), not conditional rendering — a DOM
+                node can't move between 2 different parents based on a
+                media query, so the avatar+nick content (renderAvatarContent)
+                is rendered twice: once inside the banner, stacked above the
+                name (narrow screens), once inside .store-header-info,
+                overlapping the banner/info boundary the original way
+                (negative margin, wide screens — the earlier "Warframe
+                Market" design, restored here after having been replaced by
+                the narrow-screen version for all widths).
+                Description (2026-07-21): rendered as a direct sibling right
+                after the avatar block inside .store-header-info (no more
+                .store-header-details wrapper — it only ever held this one
+                paragraph, removed as dead wrapper) — on desktop this section
+                switches to flex-direction:column (see Landing.css), so the
+                description now flows in its own full-width row below the
+                avatar row, instead of sitting beside the avatar as a
+                same-height column (the bug this fixes — see CLAUDE.md). On
+                mobile nothing changes here (avatar-block-desktop is already
+                display:none there, description was already the only visible
+                content, already read as directly below the name). */}
+            <div
+              className="store-header-banner"
+              style={{ '--banner-photo-url': `url(${API_URL}/images/store-card-banner.png)` }}
+            >
+              <div className="store-header-avatar-block store-header-avatar-block-mobile">
+                {renderAvatarContent(store)}
               </div>
-            )}
+
+              <div className="store-header-name-box">
+                <h1 className="store-header-name">{store.name}</h1>
+              </div>
+            </div>
+
+            <div className="store-header-info">
+              <div className="store-header-avatar-block store-header-avatar-block-desktop">
+                {renderAvatarContent(store)}
+              </div>
+
+              {store.description && (
+                <p className="store-header-description">{truncateDescription(store.description)}</p>
+              )}
+            </div>
+
+            {/* Compartilhar — back to an icon-only button (per request),
+                now floating in the card's bottom-right corner instead of
+                sitting inline with the store info text. */}
+            <button
+              type="button"
+              className="store-header-share-btn"
+              onClick={handleShare}
+              aria-label="Compartilhar loja"
+              title="Compartilhar loja"
+            >
+              <ShareIcon />
+            </button>
+            {shareFeedback && <span className="store-header-share-feedback">{shareFeedback}</span>}
           </div>
 
+          {/* Anúncios / Analytics tab bar (2026-07-21) — owner-only, same as
+              every other owner control on this page. Visitors keep seeing
+              the listings section directly, no tab bar at all. */}
+          {isOwner && (
+            <div className="store-tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'anuncios'}
+                className={`store-tab${activeTab === 'anuncios' ? ' store-tab-active' : ''}`}
+                onClick={() => handleTabChange('anuncios')}
+              >
+                Anúncios
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'analytics'}
+                className={`store-tab${activeTab === 'analytics' ? ' store-tab-active' : ''}`}
+                onClick={() => handleTabChange('analytics')}
+              >
+                Analytics
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'anuncios' && (
           <div className="landing-auth-card landing-store-listings">
             {actionError && <p className="landing-auth-error store-listing-action-error">{actionError}</p>}
 
@@ -492,131 +795,196 @@ export function StoreProfile() {
               <p className="landing-store-empty">Ainda sem anúncios à venda.</p>
             ) : (
               <>
+                {/* A single flex-wrap row — search + every pill are direct
+                    siblings here, wrapping onto as many lines as needed at
+                    any width (no separate breakpoint-specific layout, see
+                    Landing.css). Search is a constrained-width item now,
+                    not full-width, so it sits inline with the rest instead
+                    of forcing them onto their own line below it. */}
+                {/* 2-column grid at the 375×667 minimum screen (2026-07-17
+                    reorganization): search spans both columns on its own
+                    row, then Tipo+R$ on one row and Categoria+HD on the
+                    next — Categoria shares Tipo's column so they're always
+                    the same width. Reverts to the single flex-wrap row for
+                    min-width: 860px+ (see Landing.css) — the grid areas
+                    below only apply while the container is actually a grid. */}
                 <div className="store-listings-filters">
-                  <input
-                    type="text"
-                    className="store-listings-filter-search"
-                    placeholder="Buscar por nome, descrição, item equipado..."
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    aria-label="Buscar anúncios"
-                  />
+                  <div className="store-listings-search store-listings-filter-area-search">
+                    <SearchIcon className="store-listings-search-icon" />
+                    <input
+                      type="text"
+                      className="store-listings-search-input"
+                      placeholder="Buscar..."
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      aria-label="Buscar anúncios"
+                    />
+                  </div>
 
-                  {/* Mobile/tablet (below 860px): plain flex-wrap, unchanged
-                      from before — .store-listings-filter-row wraps Tipo,
-                      Categoria and the price wrapper as 3 items; within the
-                      price wrapper, Real/HD sit side by side, each with
-                      Mín/Máx stacked. Desktop (860px+, Landing.css):
-                      .store-listings-filters itself becomes a
-                      `grid-template-areas` 2×3 grid ("search search real" /
-                      "tipo cat hd") — `.store-listings-filter-row` and
-                      `.store-listings-filter-price-group` switch to
-                      `display: contents` there, dissolving as boxes so their
-                      children (search/Tipo/Categoria/Real/HD) become direct
-                      grid items placed by the `store-listings-filter-area-*`
-                      classes below, with no duplicated markup between the
-                      two breakpoints. */}
-                  <div className="store-listings-filter-row">
-                    <label className="store-listings-filter-field store-listings-filter-area-tipo">
-                      <span>Tipo</span>
-                      <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
-                        <option value="all">Todos</option>
-                        <option value="pokemon">Pokémon</option>
-                        <option value="item">Itens</option>
-                      </select>
-                    </label>
+                  <div
+                    className="store-listings-segmented store-listings-filter-area-tipo"
+                    role="group"
+                    aria-label="Tipo de anúncio"
+                  >
+                    <button
+                      type="button"
+                      className={typeFilter === 'all' ? 'active' : ''}
+                      onClick={() => setTypeFilter('all')}
+                    >
+                      Todos
+                    </button>
+                    <button
+                      type="button"
+                      className={typeFilter === 'pokemon' ? 'active' : ''}
+                      onClick={() => setTypeFilter('pokemon')}
+                    >
+                      Pokémon
+                    </button>
+                    <button
+                      type="button"
+                      className={typeFilter === 'item' ? 'active' : ''}
+                      onClick={() => setTypeFilter('item')}
+                    >
+                      Itens
+                    </button>
+                  </div>
 
-                    <label className="store-listings-filter-field store-listings-filter-area-categoria">
-                      <span>Categoria</span>
-                      <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
-                        <option value="">Todas as categorias</option>
-                        {categoryOptions.map((category) => (
-                          <option key={category} value={category}>
-                            {formatCategoryLabel(category)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                  <select
+                    className="store-listings-category-select store-listings-filter-area-categoria"
+                    value={categoryFilter}
+                    onChange={(event) => setCategoryFilter(event.target.value)}
+                    aria-label="Categoria"
+                  >
+                    <option value="">Todas as categorias</option>
+                    {categoryOptions.map((category) => (
+                      <option key={category} value={category}>
+                        {formatCategoryLabel(category)}
+                      </option>
+                    ))}
+                  </select>
 
-                    {/* Real and HD are independent currencies — each gets its
-                        own compact min/max pair (stacked on mobile, side by
-                        side on desktop — see Landing.css), the two currencies
-                        sitting side by side on mobile, stacked into separate
-                        grid rows on desktop. */}
-                    <div className="store-listings-filter-price-group">
-                      <div className="store-listings-filter-price-col store-listings-filter-area-real">
-                        <label className="store-listings-filter-field store-listings-filter-field-sm">
-                          <span>Mín.</span>
-                          <input
-                            type="number"
-                            min="0"
-                            placeholder="R$"
-                            value={priceMinReal}
-                            onChange={(event) => setPriceMinReal(event.target.value)}
-                          />
-                        </label>
-                        <label className="store-listings-filter-field store-listings-filter-field-sm">
-                          <span>Máx.</span>
-                          <input
-                            type="number"
-                            min="0"
-                            placeholder="R$"
-                            value={priceMaxReal}
-                            onChange={(event) => setPriceMaxReal(event.target.value)}
-                          />
-                        </label>
-                      </div>
+                  {/* Real and HD are independent currencies — each
+                      collapses to one "mín – máx" pill instead of two
+                      separate labeled fields. */}
+                  <div className="store-listings-price-pill store-listings-filter-area-real">
+                    <span className="store-listings-price-pill-label">R$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="mín"
+                      value={priceMinReal}
+                      onChange={(event) => setPriceMinReal(event.target.value)}
+                      aria-label="Preço mínimo em Real"
+                    />
+                    <span className="store-listings-price-pill-sep">–</span>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="máx"
+                      value={priceMaxReal}
+                      onChange={(event) => setPriceMaxReal(event.target.value)}
+                      aria-label="Preço máximo em Real"
+                    />
+                  </div>
 
-                      <div className="store-listings-filter-price-col store-listings-filter-area-hd">
-                        <label className="store-listings-filter-field store-listings-filter-field-sm">
-                          <span>Mín.</span>
-                          <input
-                            type="number"
-                            min="0"
-                            placeholder="HD"
-                            value={priceMinHd}
-                            onChange={(event) => setPriceMinHd(event.target.value)}
-                          />
-                        </label>
-                        <label className="store-listings-filter-field store-listings-filter-field-sm">
-                          <span>Máx.</span>
-                          <input
-                            type="number"
-                            min="0"
-                            placeholder="HD"
-                            value={priceMaxHd}
-                            onChange={(event) => setPriceMaxHd(event.target.value)}
-                          />
-                        </label>
-                      </div>
-                    </div>
+                  <div className="store-listings-price-pill store-listings-filter-area-hd">
+                    <span className="store-listings-price-pill-label">HD</span>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="mín"
+                      value={priceMinHd}
+                      onChange={(event) => setPriceMinHd(event.target.value)}
+                      aria-label="Quantidade mínima em HD"
+                    />
+                    <span className="store-listings-price-pill-sep">–</span>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="máx"
+                      value={priceMaxHd}
+                      onChange={(event) => setPriceMaxHd(event.target.value)}
+                      aria-label="Quantidade máxima em HD"
+                    />
                   </div>
                 </div>
 
                 {filteredListings.length === 0 ? (
                   <p className="landing-store-empty">Nenhum anúncio encontrado com esses filtros.</p>
                 ) : (
-                  <div className="store-listings-list">
-                    {filteredListings.map((listing) => (
-                      <StoreListingCard
-                        key={`${listing.kind}-${listing.id}`}
-                        listing={listing}
-                        isOwner={isOwner}
-                        slug={slug}
-                        storeWhatsapp={store.whatsapp}
-                        onStatusChange={handleStatusChange}
-                        onDelete={handleDelete}
-                      />
-                    ))}
-                  </div>
+                  <>
+                    <div className="store-listings-columns">
+                      {leftColumnListings.length > 0 && (
+                        <div className="store-listings-list store-listings-column">
+                          {leftColumnListings.map((listing) => (
+                            <StoreListingCard
+                              key={`${listing.kind}-${listing.id}`}
+                              listing={listing}
+                              isOwner={isOwner}
+                              slug={slug}
+                              storeWhatsapp={store.whatsapp}
+                              onStatusChange={handleStatusChange}
+                              onDelete={handleDelete}
+                            />
+                          ))}
+                          {typeFilter === 'all' && showMoreLeft && (
+                            <button
+                              type="button"
+                              className="landing-btn landing-btn-outline"
+                              onClick={() => setVisibleLeftCount((count) => count + ALL_TYPE_PAGE_SIZE)}
+                            >
+                              Ver mais
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {rightColumnListings.length > 0 && (
+                        <div className="store-listings-list store-listings-column">
+                          {rightColumnListings.map((listing) => (
+                            <StoreListingCard
+                              key={`${listing.kind}-${listing.id}`}
+                              listing={listing}
+                              isOwner={isOwner}
+                              slug={slug}
+                              storeWhatsapp={store.whatsapp}
+                              onStatusChange={handleStatusChange}
+                              onDelete={handleDelete}
+                            />
+                          ))}
+                          {typeFilter === 'all' && showMoreRight && (
+                            <button
+                              type="button"
+                              className="landing-btn landing-btn-outline"
+                              onClick={() => setVisibleRightCount((count) => count + ALL_TYPE_PAGE_SIZE)}
+                            >
+                              Ver mais
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {typeFilter !== 'all' && showMoreSingle && (
+                      <div className="store-listings-load-more-wrap">
+                        <button
+                          type="button"
+                          className="landing-btn landing-btn-outline"
+                          onClick={() => setVisibleSingleCount((count) => count + SINGLE_TYPE_PAGE_SIZE)}
+                        >
+                          Ver mais
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}
           </div>
+          )}
 
-          <Link to="/" className="landing-auth-back">
-            ← Voltar para a página inicial
-          </Link>
+          {isOwner && activeTab === 'analytics' && (
+            <AnalyticsTab slug={slug} idToken={idToken} onListingStatusSynced={syncListingStatus} />
+          )}
         </div>
       </div>
 

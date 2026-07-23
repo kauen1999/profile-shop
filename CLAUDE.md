@@ -155,20 +155,97 @@ documentado com precisão (não só "flakiness" genérico).
 sem secret novo — a URL de conexão é sempre a mesma, local ao runner),
 `npx prisma db push --skip-generate` cria o schema do zero, depois `node
 --test test/deduplication.test.js test/storeRoutes.test.js`. Jobs
-`backend`/`frontend` já existentes intocados. YAML validado
-sintaticamente (`yaml.safe_load`) — **não verificado ainda rodando de
-verdade no GitHub** (esta sessão não tem Docker/Postgres local pra simular
-o job completo, e abrir um PR de teste exigiria commitar/empurrar pro
-remoto, fora do escopo de uma mudança sem pedido explícito do usuário para
-esse passo específico) — a lógica em si (mesmos comandos, mesmos 2
-arquivos de teste) já roda limpa localmente contra um Postgres real
-(Neon), só a etapa "container efêmero espec[í]fico do Actions" fica
-pendente de confirmação na primeira vez que este workflow rodar de
-verdade. **Branch protection ainda não foi atualizada** pra exigir o
-check `test-db` — deliberadamente adiado até essa primeira execução real
-confirmar verde (adicionar um check obrigatório que nunca passou
-travaria todo merge futuro, incluindo do próprio dono, já que
-`enforce_admins: true`).
+`backend`/`frontend` já existentes intocados.
+
+**Atualização (mesmo dia, PR #1 real)**: o job `test-db` rodou de verdade
+no GitHub Actions e precisou de 2 correções que só apareceram nesse
+ambiente real (nunca reproduzidas localmente, mesmo simulando com o
+Neon real): (1) `storeRoutes.test.js` importa `src/routes/stores.js`,
+que carrega `src/firebaseAdmin.js` — esse módulo lança exceção no
+`require()` sem `FIREBASE_SERVICE_ACCOUNT_JSON`/`PATH` definido; corrigido
+adicionando uma credencial RSA descartável (gerada via `openssl genrsa`,
+nunca usada pra assinar nada real, só satisfaz a validação estrutural de
+`admin.credential.cert()` — os testes nunca chamam `verifyIdToken`) como
+env var do job. (2) A PR inicial só trazia os 5 arquivos deste plano —
+sem `prisma/schema.prisma`/`src/routes/stores.js`/`storePokemonOptions.js`
+(que já tinham as mudanças de `soldAt`/`StoreWorld`/`extraMoveCount`
+prontas localmente, mas nunca commitadas antes), a CI rodava contra o
+código antigo e os testes corretamente falhavam testando comportamento
+que ainda não existia ali — trazidos os 3 arquivos certos (confirmado
+antes: `authMiddleware.js`/`firebaseAdmin.js`/`db.js`/`asyncHandler.js`/
+`storeItemOptions.js` já eram idênticos entre local e branch, não
+precisaram de mudança). Os 3 checks (`backend`, `test-db`, `frontend`)
+confirmados verdes na PR real; branch protection atualizada pra exigir
+os 3 (`enforce_admins: true` mantido). PR #1 mergeada.
+
+## Revisão de todo o backlog pendente da sessão antes de subir pra main (2026-07-23)
+
+Antes de commitar/empurrar o acúmulo de mudanças não commitadas desta
+sessão (21 arquivos modificados + 4 novos — dashboard Analytics,
+formatação compacta de HD, resolução de sprite de addon, import/export
+de texto "look", ajustes de UI da vitrine), rodada uma revisão de
+segurança (subagentes, mesmo processo do skill `security-review` —
+identificação + filtro de falso-positivo em paralelo) e uma revisão de
+correção/qualidade (subagente dedicado) sobre o diff inteiro antes de
+integrar.
+
+**Segurança**: 0 achados de alta confiança. O único candidato (`POST
+/stores/:slug/visit`/`listing-view` — endpoints públicos por design,
+sem vínculo de sessão, permitindo inflar as próprias métricas de visita/
+view de uma loja) pontuou 2/10 no filtro — é um contador privado que só
+o próprio dono vê (sem leaderboard público, sem exposição de dado de
+terceiro), então cai na exclusão "falta de hardening", não vulnerabilidade
+de acesso não autorizado.
+
+**Correção/qualidade — 3 bugs reais confirmados e corrigidos**:
+1. **`src/index.js`** — o rate limiter novo (`express-rate-limit@8.6.0`)
+   valida por padrão que, se o header `X-Forwarded-For` estiver presente,
+   `trust proxy` do Express precisa estar configurado — senão lança
+   `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR`. Como o Express nunca seta `trust
+   proxy` neste projeto (default `false`) e o deploy real é na Vercel (que
+   sempre passa `X-Forwarded-For` — o próprio `src/index.js` já cita
+   "hosts sem disco gravável persistente (ex: Vercel)" em outro comentário
+   próximo), os dois endpoints novos (`/visit`/`/listing-view`) quebrariam
+   silenciosamente em produção assim que alguém acessasse a loja de fora
+   do localhost — nunca capturado pela verificação via `curl` local
+   (documentada nas seções anteriores), já que localhost nunca manda esse
+   header. Corrigido com `app.set('trust proxy', 1)` (só 1 hop confiado,
+   não `true` — `true` deixaria um cliente forjar o próprio IP via header
+   e furar o rate limit por completo). Verificado: `curl` com
+   `X-Forwarded-For` forjado contra `/visit` → `201` (antes quebraria).
+2. **`frontend/src/components/AnalyticsTab.jsx`'s `SalesPieChart`** — com
+   uma única categoria (Pokémon ou Item) somando 100% das vendas, o slice
+   único tinha `startAngle: 0, endAngle: 360` — `describePieSlice`'s ponto
+   inicial e final do arco caem no mesmo lugar (0° e 360° são o mesmo
+   ponto no círculo), colapsando o path SVG num arco degenerado
+   (invisível) — o gráfico de pizza ficava em branco pra qualquer loja
+   cujas vendas fossem só de um tipo, só a legenda de texto aparecia.
+   Corrigido: quando sobra só 1 categoria com `count > 0`, desenha um
+   `<circle>` de verdade em vez de tentar passar por `describePieSlice`.
+   Verificado via Playwright (`page.route` interceptando `/stores/me/
+   analytics` com um payload sintético 100% Pokémon): SVG confirmado
+   contendo `<circle fill="#2e6fdb" ...>` preenchendo a área toda, não
+   mais um path vazio.
+3. **`frontend/src/domain/resolveImportDraft.js` +
+   `frontend/src/pages/ImportListings.jsx`** — `addonCompatAll` (um
+   `GET /store-pokemon-options/addons` completo, sem filtro de busca)
+   era buscado e guardado em cada bloco de Pokémon resolvido durante a
+   importação de texto colado, mas nunca lido em lugar nenhum — o seletor
+   de Addons (`MultiSelectPicker`) busca seus próprios candidatos direto
+   via busca (`api.getAddonsFor(wikiTitle, search)`), independente desse
+   estado. Confirmado por busca exaustiva (`grep`) que não sobrava nenhum
+   consumidor. Era uma requisição de rede desperdiçada por bloco de
+   Pokémon durante a importação — contra o próprio esforço desta sessão
+   de reduzir `ANALYZE_CONCURRENCY` pra aliviar carga do backend em
+   colagens grandes. Removido dos dois arquivos (fetch, estado inicial,
+   reset ao trocar de Pokémon/Pokébola) — confirmado sem nenhuma
+   referência restante.
+
+**Verificado depois das 3 correções**: `node -c` nos arquivos de backend
+tocados; `npm run build`/`npm run lint` do frontend limpos (só os 2
+warnings pré-existentes de sempre); suíte de teste completa (13/13,
+incluindo `storeRoutes.test.js`) verde; backend reiniciado com a correção
+de `trust proxy`, `GET /health` limpo.
 
 ## O banco: CatalogItem é o hub
 

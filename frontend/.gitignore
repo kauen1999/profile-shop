@@ -25,3 +25,5 @@ dist-ssr
 
 # stray debug screenshots (accidental "undefined" path from a Playwright script)
 undefined/
+.vercel
+.env*

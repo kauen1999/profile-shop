@@ -8,24 +8,26 @@ import { Autocomplete } from '../components/Autocomplete';
 import { MultiSelectPicker } from '../components/MultiSelectPicker';
 import { LookPreviewCard } from '../components/LookPreviewCard';
 import { PokemonSpritePreview } from '../components/PokemonSpritePreview';
+import { makeAddonOptionRenderer } from '../components/renderAddonOption';
 import { useFetch } from '../hooks/useFetch';
 import { buildPokemonLookText, GENDER_LABELS, toSealName } from '../domain/buildPokemonLookText';
+import { GAME_WORLD_LABELS } from '../domain/buildItemLookText';
 import { NATURES } from '../domain/gameConstants';
 import { findAddonLooktypeUrl, isMigratedImageUrl, isShinyPokemonName } from '../domain/resolveAddonSprite';
 import '../AddPokemonListing.css';
 
 async function fetchPokeballs(search) {
-  const res = await api.getCatalogItems({ category: 'pokeballs', search, pageSize: 30 });
+  const res = await api.getCatalogItems({ category: 'pokeballs', search, nameOnly: true, pageSize: 30 });
   return res.items;
 }
 
 async function fetchHeldItems(search) {
-  const res = await api.getCatalogItems({ category: 'held-items', search, pageSize: 30 });
+  const res = await api.getCatalogItems({ category: 'held-items', search, nameOnly: true, pageSize: 30 });
   return res.items;
 }
 
 async function fetchStickerBalls(search) {
-  const res = await api.getCatalogItems({ category: 'sticker-balls', search, pageSize: 30 });
+  const res = await api.getCatalogItems({ category: 'sticker-balls', search, nameOnly: true, pageSize: 30 });
   return res.items;
 }
 
@@ -102,6 +104,12 @@ export function AddPokemonListing() {
   const [extraMoveCount, setExtraMoveCount] = useState('');
   const [presetSlotCount, setPresetSlotCount] = useState('');
 
+  // Mundo — options come from the store's own registered worlds
+  // (Store.StoreWorld, set in Configurações da loja), never a hardcoded
+  // list of all 7. Auto-filled below when the store only has one.
+  const [world, setWorld] = useState('');
+  const [worldOptions, setWorldOptions] = useState([]);
+
   // Commercial/listing data, not part of the in-game "look" — same reasoning
   // that already keeps World out of this form. Both optional/independent,
   // never referenced by the textual or visual look preview.
@@ -135,6 +143,9 @@ export function AddPokemonListing() {
           return;
         }
 
+        const storeWorldOptions = (store.StoreWorld || []).map((w) => w.world);
+        setWorldOptions(storeWorldOptions);
+
         if (isEditMode) {
           const fullStore = await getStoreBySlug(slug);
           const existing = (fullStore.StorePokemon || []).find((row) => row.id === editId);
@@ -150,6 +161,7 @@ export function AddPokemonListing() {
           setLevel(existing.level != null ? String(existing.level) : '');
           setGender(existing.gender || '');
           setNature(existing.nature || '');
+          setWorld(existing.world || '');
           setNickname(existing.nickname || '');
           setSelectedAddons((existing.StorePokemonAddon || []).map((row) => row.CatalogItem).filter(Boolean));
           setEquippedAddon(existing.CatalogItem_StorePokemon_equippedAddonCatalogItemIdToCatalogItem || null);
@@ -162,6 +174,10 @@ export function AddPokemonListing() {
           setPresetSlotCount(existing.presetSlotCount != null ? String(existing.presetSlotCount) : '');
           setPriceReal(existing.priceReal != null ? String(existing.priceReal) : '');
           setPriceHd(existing.priceHd != null ? String(existing.priceHd) : '');
+        } else if (storeWorldOptions.length === 1) {
+          // Only one world registered for this store — no reason to make
+          // the owner pick it explicitly every time.
+          setWorld(storeWorldOptions[0]);
         }
 
         setPageStatus('ready');
@@ -266,6 +282,13 @@ export function AddPokemonListing() {
     });
   }
 
+  // Custom thumb for the Addons picker's dropdown rows — shows the current
+  // Pokémon actually wearing each addon (same composite the sprite preview
+  // and the storefront modal use), not the addon's own generic icon, so the
+  // user can tell them apart before picking one. Shared with
+  // ImportListings.jsx's "Usando" picker — see renderAddonOption.jsx.
+  const renderAddonOption = makeAddonOptionRenderer(pokemon?.name);
+
   function toggleSticker(item) {
     setStickers((current) => {
       const exists = current.some((s) => s.wikiPageId === item.wikiPageId);
@@ -287,14 +310,22 @@ export function AddPokemonListing() {
   // dedicated endpoint).
   const genderOptions = pokemon?.genderOptions || (gender ? [gender] : []);
 
+  // Same "fall back to just the already-picked value" reasoning as
+  // genderOptions above — if this listing's current world was removed from
+  // the store's registered worlds since it was created (edit mode), the
+  // <select> still shows the real current value instead of silently
+  // resetting to nothing.
+  const effectiveWorldOptions =
+    world && !worldOptions.includes(world) ? [...worldOptions, world] : worldOptions;
+
   const spritePreviewUrl = resolveSpritePreviewUrl(pokemon, equippedAddon);
 
   async function handleSubmit(event) {
     event.preventDefault();
 
-    if (!pokeball || !pokemon || !level || !gender || !nature) {
+    if (!pokeball || !pokemon || !level || !gender || !nature || !world) {
       setSubmitStatus('error');
-      setSubmitError('Preencha os campos obrigatórios: Pokébola, Pokémon, Nível, Gênero e Nature.');
+      setSubmitError('Preencha os campos obrigatórios: Pokébola, Pokémon, Nível, Gênero, Nature e Mundo.');
       return;
     }
 
@@ -332,6 +363,7 @@ export function AddPokemonListing() {
           level: Number(level),
           gender,
           nature,
+          world,
           nickname: nickname.trim() || null,
           addonCatalogItemIds: selectedAddons.map((a) => a.wikiPageId),
           equippedAddonCatalogItemId: equippedAddon?.wikiPageId ?? null,
@@ -352,6 +384,7 @@ export function AddPokemonListing() {
           level: Number(level),
           gender,
           nature,
+          world,
           nickname: nickname.trim() || undefined,
           addonCatalogItemIds: selectedAddons.length ? selectedAddons.map((a) => a.wikiPageId) : undefined,
           equippedAddonCatalogItemId: equippedAddon?.wikiPageId,
@@ -480,6 +513,29 @@ export function AddPokemonListing() {
         </label>
 
         <label>
+          Mundo *
+          <select
+            value={world}
+            onChange={(e) => setWorld(e.target.value)}
+            disabled={worldOptions.length === 0}
+            required
+          >
+            <option value="">Selecione...</option>
+            {effectiveWorldOptions.map((w) => (
+              <option key={w} value={w}>
+                {GAME_WORLD_LABELS[w] || w}
+              </option>
+            ))}
+          </select>
+        </label>
+        {worldOptions.length === 0 && (
+          <p className="new-listing-field-hint">
+            Sua loja ainda não tem nenhum mundo cadastrado — adicione um em Configurações antes de
+            anunciar um Pokémon.
+          </p>
+        )}
+
+        <label>
           Nickname
           <input type="text" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="Opcional" />
         </label>
@@ -495,6 +551,7 @@ export function AddPokemonListing() {
             placeholder="Buscar addon..."
             disabled={!pokemon}
             resetKey={pokemon?.wikiPageId}
+            renderOption={renderAddonOption}
           />
         </div>
 

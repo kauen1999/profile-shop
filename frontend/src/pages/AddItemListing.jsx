@@ -15,6 +15,7 @@ import '../AddPokemonListing.css';
 async function fetchCatalogItems(search) {
   const res = await api.getCatalogItems({
     search,
+    nameOnly: true,
     pageSize: 30,
     excludeCategories: ITEM_PICKER_EXCLUDED_CATEGORIES.join(','),
   });
@@ -169,6 +170,15 @@ export function AddItemListing() {
       return;
     }
 
+    // Mundo de Origem virou obrigatório (2026-07-18, pedido explícito) —
+    // reverte a decisão de 2026-07-14 que deixava esse campo sempre opcional
+    // (junto com Número de Série/Data, que continuam opcionais).
+    if (!originWorld) {
+      setSubmitStatus('error');
+      setSubmitError('Informe o Mundo de Origem.');
+      return;
+    }
+
     if (priceReal === '' && priceHd === '') {
       setSubmitStatus('error');
       setSubmitError('Informe ao menos um preço (Real ou HD).');
@@ -200,7 +210,7 @@ export function AddItemListing() {
           serialNumber: serialNumber.trim() || null,
           acquiredAt: acquiredAt.trim() || null,
           originWorld: originWorld || null,
-          quantity: template === 'stackable' ? (quantity !== '' ? Number(quantity) : null) : undefined,
+          quantity: quantity !== '' ? Number(quantity) : null,
           notes: notes.trim() || null,
           priceReal: priceReal !== '' ? Number(priceReal) : null,
           priceHd: priceHd !== '' ? Number(priceHd) : null,
@@ -211,7 +221,7 @@ export function AddItemListing() {
           serialNumber: serialNumber.trim() || undefined,
           acquiredAt: acquiredAt.trim() || undefined,
           originWorld: originWorld || undefined,
-          quantity: template === 'stackable' && quantity !== '' ? Number(quantity) : undefined,
+          quantity: quantity !== '' ? Number(quantity) : undefined,
           notes: notes.trim() || undefined,
           priceReal: priceReal !== '' ? Number(priceReal) : undefined,
           priceHd: priceHd !== '' ? Number(priceHd) : undefined,
@@ -292,9 +302,12 @@ export function AddItemListing() {
             deixando de fora itens genuinamente legendary que não foram
             tagueados numa sync antiga (lacuna documentada no CLAUDE.md). Em
             vez de esconder o campo até o catálogo saber que é legendary,
-            os 3 campos ficam sempre disponíveis e opcionais em qualquer
-            item — o vendedor sabe pelo próprio jogo se o item que tem é
-            legendary, mesmo quando o catálogo ainda não sabe. */}
+            os 3 campos ficam sempre disponíveis em qualquer item — o
+            vendedor sabe pelo próprio jogo se o item que tem é legendary,
+            mesmo quando o catálogo ainda não sabe.
+            2026-07-18: Mundo de Origem virou obrigatório (pedido explícito,
+            reverte a parte "opcional" da decisão acima só pra esse campo —
+            Número de Série/Data continuam opcionais). */}
         <label>
           Número de Série
           <input
@@ -317,9 +330,9 @@ export function AddItemListing() {
         </label>
 
         <label>
-          Mundo de Origem
-          <select value={originWorld} onChange={(e) => setOriginWorld(e.target.value)}>
-            <option value="">Selecione... (opcional)</option>
+          Mundo de Origem *
+          <select value={originWorld} onChange={(e) => setOriginWorld(e.target.value)} required>
+            <option value="">Selecione...</option>
             {GAME_WORLDS.map((world) => (
               <option key={world} value={world}>
                 {GAME_WORLD_LABELS[world]}
@@ -335,21 +348,26 @@ export function AddItemListing() {
           </label>
         )}
 
-        {template === 'stackable' && (
-          <label>
-            Quantidade
-            <input
-              type="number"
-              min="1"
-              value={quantity}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val !== '' && Number(val) < 1) return;
-                setQuantity(val);
-              }}
-            />
-          </label>
-        )}
+        {/* 2026-07-18: Quantidade deixou de depender do template "stackable"
+            (category === 'materials', só um proxy aproximado — ver
+            CLAUDE.md, nunca um sinal real de "isso é empilhável") pelo
+            mesmo motivo já registrado acima pros 3 campos de
+            Legendary — qualquer item pode ser vendido em lote, não só os
+            classificados como material. */}
+        <label>
+          Quantidade
+          <input
+            type="number"
+            min="1"
+            value={quantity}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val !== '' && Number(val) < 1) return;
+              setQuantity(val);
+            }}
+            placeholder="Opcional"
+          />
+        </label>
 
         <label>
           Descrição

@@ -24,6 +24,20 @@ function buildPriceLines(priceReal, priceHd) {
   return lines;
 }
 
+// Same "export-only, not real in-game text" reasoning as buildPriceLines
+// above — `world` is a required field on every Pokémon listing (see
+// POST /stores/me/pokemon), but it's app-internal (which of the store's own
+// registered worlds this listing is under, added 2026-07-17), never part of
+// buildPokemonLookText.js's pure preview text and never shown by the real
+// game's own look command. Without this line, an exported Pokémon could
+// never round-trip back through Import — the field is mandatory but the
+// text carrying it never mentioned it, so re-importing always failed
+// validation server-side with "world é obrigatório" (bug found and fixed
+// 2026-07-18, this same entry — see CLAUDE.md).
+function buildWorldLine(world) {
+  return world ? [`Mundo: ${GAME_WORLD_LABELS[world] || world}`] : [];
+}
+
 function buildPokemonExportText(raw) {
   const pokeballName = raw.CatalogItem_StorePokemon_pokeballCatalogItemIdToCatalogItem?.name;
   const pokemonName = raw.CatalogItem_StorePokemon_pokemonCatalogItemIdToCatalogItem?.name;
@@ -54,8 +68,9 @@ function buildPokemonExportText(raw) {
     presetSlotCount: raw.presetSlotCount ?? undefined,
   });
 
+  const worldLine = buildWorldLine(raw.world);
   const priceLines = buildPriceLines(raw.priceReal, raw.priceHd);
-  return [lookText, ...priceLines].join('\n');
+  return [lookText, ...worldLine, ...priceLines].join('\n');
 }
 
 // Simplification deliberately mirrored from the plan: doesn't call

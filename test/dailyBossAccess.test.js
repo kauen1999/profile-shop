@@ -3,46 +3,28 @@ const assert = require('node:assert/strict');
 require('dotenv').config();
 const { prisma } = require('../src/db');
 
-// Documents and guards the CURRENT behavior of `daily-boss-access`, without
-// changing the model — see CATALOG_PIPELINE.md section 3 ("Por que
-// daily-boss-access não é um CatalogItem, conceitualmente") and section 5
-// ("Não alterar sem revisão arquitetural": daily-boss-access migration is
-// deferred, not decided).
+// This used to guard the CURRENT behavior of `daily-boss-access` while its
+// migration was deferred (see CATALOG_PIPELINE.md section 3). The deferred
+// decision was later revisited and resolved: the 24 rows were deleted from
+// the catalog on 2026-07-15 (CLAUDE.md, "Deleção de dado real 2026-07-15").
 //
-// If this test starts failing, it means the underlying data/behavior
-// changed — that's exactly the trigger to revisit the deferred modeling
-// decision in CATALOG_PIPELINE.md, not to just update this test.
+// This test is now the opposite canary — it guards against the category
+// silently reappearing. `npm run dailyboss:sync`'s creation branch still
+// writes `category: 'daily-boss-access'` for its 'access' namespace (that
+// code path was deliberately left in place, see CLAUDE.md) — if that script
+// runs again before the deferred modeling decision is revisited, this test
+// starts failing again, which is the correct signal to go back to
+// CATALOG_PIPELINE.md, not to just update this assertion.
 
 after(async () => {
   await prisma.$disconnect();
 });
 
-test('daily-boss-access items never have an image (they are access windows, not tradeable objects)', async () => {
-  const items = await prisma.catalogItem.findMany({ where: { category: 'daily-boss-access' } });
-  assert.ok(items.length > 0, 'expected daily-boss-access to still exist as a category');
-  for (const item of items) {
-    assert.equal(item.imageUrl, '', `expected empty imageUrl for "${item.name}" (wikiPageId ${item.wikiPageId})`);
-  }
-});
-
-test('daily-boss-access items are never referenced by Listing or StoreItem (never traded)', async () => {
-  const ids = (await prisma.catalogItem.findMany({
-    where: { category: 'daily-boss-access' },
-    select: { wikiPageId: true },
-  })).map((i) => i.wikiPageId);
-
-  const [listingCount, storeItemCount] = await Promise.all([
-    prisma.listing.count({ where: { catalogItemId: { in: ids } } }),
-    prisma.storeItem.count({ where: { catalogItemId: { in: ids } } }),
-  ]);
-
-  assert.equal(listingCount, 0);
-  assert.equal(storeItemCount, 0);
-});
-
-test('daily-boss-access slugs follow the auto-generated event-window pattern', async () => {
-  const items = await prisma.catalogItem.findMany({ where: { category: 'daily-boss-access' } });
-  for (const item of items) {
-    assert.match(item.slug, /^daily-boss-access-/, `expected auto-generated slug prefix for "${item.name}"`);
-  }
+test('daily-boss-access no longer exists as a category (deleted 2026-07-15, watch for silent recreation)', async () => {
+  const count = await prisma.catalogItem.count({ where: { category: 'daily-boss-access' } });
+  assert.equal(
+    count,
+    0,
+    'daily-boss-access reappeared — likely dailyboss:sync ran again; revisit the deferred modeling decision in CATALOG_PIPELINE.md before deciding what to do with these rows'
+  );
 });
