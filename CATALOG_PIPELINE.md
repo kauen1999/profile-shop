@@ -131,12 +131,29 @@ Um `CatalogItem` no modelo deste projeto representa algo que o jogador
 possui e pode negociar. Uma janela de acesso é um conceito de calendário/
 progressão, categoricamente diferente.
 
-### Registro: a migração foi adiada, por decisão explícita
+### Registro: a migração foi adiada, depois revisitada e resolvida (deleção)
 
-Durante esta auditoria, foi oferecida uma correção mínima (tag
+Durante a auditoria original, foi oferecida uma correção mínima (tag
 `extractedFields.isAccessRecord`, sem mudança de schema) e a decisão
-explícita foi **não mexer agora**. Isso não é esquecimento — é adiamento
-registrado. Ver seção 5.
+explícita foi **não mexer naquele momento**. Isso não foi esquecimento —
+foi adiamento registrado (ver seção 5, texto original preservado abaixo).
+
+**Atualização (2026-07-15)**: a decisão adiada foi revisitada, a pedido
+explícito do usuário, e resolvida de forma diferente da correção mínima
+oferecida — as 24 linhas foram **apagadas do catálogo** (não só
+tagueadas), confirmado sem nenhuma referência em `Listing`/`StoreItem`
+antes da deleção. Ver `CLAUDE.md`, "Deleção de dado real 2026-07-15", pro
+registro completo.
+
+**Risco conhecido, não resolvido**: `src/wiki-crawler/parsers/
+syncDailyBossCatalog.js`'s branch de criação (namespace `'access'`, linha
+~145) continua escrevendo `category: 'daily-boss-access'` — rodar `npm
+run dailyboss:sync` de novo recria essas linhas silenciosamente. Isso foi
+deixado assim de propósito (o pedido do usuário foi "apagar agora", não
+"impedir de existir pra sempre" — essa segunda decisão de modelagem não
+foi tomada). `test/dailyBossAccess.test.js` agora serve de canário contra
+essa recriação silenciosa — se esse teste voltar a falhar, é o sinal pra
+revisitar esta seção antes de decidir o que fazer com as linhas.
 
 ---
 

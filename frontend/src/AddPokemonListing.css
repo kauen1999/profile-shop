@@ -548,22 +548,89 @@
    properties and .landing-btn classes already defined in Landing.css (this
    component always renders inside a .landing wrapper). */
 
-.store-listings-list {
+/* 2-column split (2026-07-18, explicit request): "Todos" splits by kind
+   (Pokémon left, Items right — see StoreProfile.jsx); a single type
+   filter splits that same kind's listings evenly across both columns
+   instead. Mobile-first: a plain column stack (both .store-listings-
+   column divs stacked, in DOM order — so effectively grouped by kind on
+   mobile too, not interleaved) until min-width:860px, where the two
+   columns sit side by side — same breakpoint already used throughout
+   this file/Landing.css for "mobile gets the simple stacked version,
+   desktop gets the richer layout" decisions. */
+.store-listings-columns {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
 }
 
-.store-listing-card {
+@media (min-width: 860px) {
+  .store-listings-columns {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 1.25rem;
+  }
+
+  .store-listings-column {
+    flex: 1 1 0;
+    /* Without this, a column's own content (via .store-listing-card's
+       max-width:720px) could refuse to shrink below that, pushing the
+       2-column row wider than its container on a narrower desktop width
+       (860–1440px) — same "flex items need an explicit min-width:0 to
+       actually shrink" class of bug already documented elsewhere in this
+       project. */
+    min-width: 0;
+  }
+}
+
+/* "Ver mais" (2026-07-18) — only used when Tipo is narrowed to a single
+   kind, where one shared button (not one per column) reveals 10 more at a
+   time. The per-column button (Tipo === 'all') needs no CSS of its own —
+   it's just the last child inside .store-listings-list, already
+   `align-items: center`. */
+.store-listings-load-more-wrap {
   display: flex;
-  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 0.85rem;
+}
+
+.store-listings-list {
+  display: flex;
+  flex-direction: column;
+  /* Centers each card now that it no longer stretches to the list's full
+     width (see .store-listing-card's own max-width below) — without this,
+     flex-column's default align-items: stretch would still force full
+     width regardless of the max-width set on the card itself. */
+  align-items: center;
+  gap: 0.85rem;
+}
+
+/* Compact card (2026-07-18): height is driven by the photo (72px + this
+   padding), never by content — that's why `flex-wrap` is gone (it used to
+   let the pill list below the name wrap to extra rows, growing the card
+   taller than its neighbors) and `.store-listing-name`/
+   `.store-listing-price-compact` below both force single-line + ellipsis
+   instead of wrapping. Everything that doesn't fit in that height (full
+   detail list, addons, the Vendido/Conversar no WhatsApp button) moved
+   into the "ver anúncio completo" modal, opened by clicking the name
+   itself (.store-listing-name-btn — the standalone "+" corner button that
+   used to open it was removed 2026-07-18, same day, per explicit
+   request). */
+.store-listing-card {
+  position: relative;
+  display: flex;
+  align-items: center;
   gap: 0.85rem;
   background: #fff;
-  border: 1px solid rgba(46, 58, 158, 0.1);
   border-radius: 14px;
   padding: 1rem;
   box-shadow: 0 8px 20px rgba(26, 31, 61, 0.08);
   transition: opacity 0.15s ease;
+  width: 100%;
+  max-width: 720px;
+  /* Without this, the default content-box model adds the 1rem padding
+     (32px) ON TOP of width:100% instead of including it — see the
+     2-column overlap bug this fixed (2026-07-17). */
+  box-sizing: border-box;
 }
 
 /* HIDDEN/SOLD listings, owner view only (non-owners never receive them at
@@ -593,8 +660,17 @@
 }
 
 .store-listing-photo img {
-  max-width: 100%;
-  max-height: 100%;
+  /* 85%, not 100% (2026-07-18, explicit request) — a "normal" (non-shiny)
+     sprite's artwork typically fills its own source canvas edge-to-edge
+     (unlike shiny sprites, which went through scripts/normalizeShinySprites.js's
+     centering/padding pass — see CLAUDE.md's "Resolvido em 2026-07-13"
+     entry, never applied to non-shiny sprites). At 100% that sprite filled
+     the whole 72px box with zero breathing room, reading as oversized/
+     "cortado" against the box edge even though object-fit:contain never
+     actually drops a pixel. A uniform margin fixes the look for every
+     sprite without needing to detect shiny vs. normal in JS. */
+  max-width: 85%;
+  max-height: 85%;
   object-fit: contain;
 }
 
@@ -617,7 +693,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.1rem;
 }
 
 .store-listing-tag {
@@ -642,66 +718,205 @@
   color: #a3202f;
 }
 
+/* Name + compact price share a row now (2026-07-18) — price used to sit on
+   its own line below the name; that line is now the per-kind compact stat
+   summary instead (.store-listing-compact-summary below). `min-width: 0`
+   on the name (not the row) is what lets it actually shrink/ellipsis while
+   the price, `flex-shrink: 0`, never gets squeezed. */
+.store-listing-name-row {
+  display: flex;
+  /* `center`, not `baseline` (2026-07-18) — the world chip
+     (.store-listing-world-inline) is itself a flex container starting
+     with an SVG icon, which has no real text baseline the way the name/
+     price's plain text does; the browser's fallback baseline computation
+     for it sat noticeably higher than the text baseline of its siblings
+     (confirmed visually — icon+label rode above the name/price line).
+     `align-items: center` sidesteps baseline computation entirely and
+     centers all three items by their box height instead, which works
+     uniformly whether an item is plain text or an icon+text chip. */
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .store-listing-name {
   margin: 0;
-  font-size: 1rem;
-  color: var(--ps-ink, #1a1f3d);
-  overflow-wrap: anywhere;
+  min-width: 0;
+  /* `flex-grow: 0` (2026-07-18, was 1) — with grow:1 the box stretched to
+     fill the row's full width even when the text itself was short, leaving
+     invisible padding between the visible name text and the price that
+     followed it (the box was wide, the gap alone wasn't what separated
+     them) — confirmed the price reading as "far" from the name despite a
+     small `gap`. grow:0 makes the box hug its own text, so only the
+     intentional `gap` sits between name and price.
+     `flex-basis: auto` (not 0) is still what lets a short name + short
+     price both display in full whenever the row has room — a flex-basis:0
+     split by ratio alone was truncating "R$ 250 · 750000 HD" down to "R$
+     250 · 75000…" even inside a 584px-wide card with plenty of free space
+     (confirmed via screenshot). `flex-shrink: 1` (name) vs. the price's `3`
+     below — only once the row is genuinely too narrow for both do they
+     give up space, and the price (secondary info) gives up 3× more of it
+     than the name (the identifying piece). This is just the <h3> wrapper
+     now (2026-07-18) — the actual clickable text lives in the <button>
+     inside it, see .store-listing-name-btn, which is what carries the
+     typography/ellipsis. */
+  flex: 0 1 auto;
 }
 
-/* Compact pill row (2026-07-15) — replaces the earlier bulleted vertical
-   list now that the card shows every non-empty look field (nickname, level,
-   gender, nature, boost, captured-at, held item, mega stone, addons+usando,
-   stickers, extra moves, preset slots for Pokémon; serial number/date/
-   world/notes for items), not just a small curated subset. Wraps to as many
-   rows as needed rather than growing the card's height with one line per
-   field. */
-.store-listing-details {
+/* The name itself is the "ver anúncio completo" trigger now (2026-07-18,
+   replacing the standalone "+" corner button) — a real <button> nested
+   inside the <h3> so the listing keeps heading semantics for screen-reader
+   navigation while still being clickable/keyboard-operable. Reset to look
+   exactly like the plain text it replaced: no button chrome, inherits
+   sizing from the parent row via width:100% + min-width:0 (needed for the
+   ellipsis truncation to actually engage in a shrinking flex row). */
+.store-listing-name-btn {
+  display: block;
+  width: 100%;
+  min-width: 0;
   margin: 0;
   padding: 0;
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ps-ink, #1a1f3d);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.store-listing-detail-pill {
-  padding: 0.15rem 0.55rem;
-  border-radius: 999px;
-  background: rgba(46, 58, 158, 0.07);
-  color: var(--ps-ink, #1a1f3d);
+.store-listing-name-btn:hover,
+.store-listing-name-btn:focus-visible {
+  text-decoration: underline;
+}
+
+.store-listing-price-compact {
+  min-width: 0;
+  flex: 0 3 auto;
+  font-size: 0.78rem;
+  font-weight: 700;
+  /* Brand yellow (2026-07-18, was muted ps-ink at 0.7 opacity) — same
+     token every other price/CTA accent in the app already uses
+     (.landing-btn-primary, .store-listing-contact-btn), full opacity per
+     explicit request. font-weight bumped to 700 alongside it — ps-yellow
+     is light, and needed the extra weight to stay legible at this small
+     size against the white card background. */
+  color: var(--ps-yellow, #ffcb05);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Second compact-card line (2026-07-18) — terse game-notation stat summary
+   (buildPokemonCompactSummary/buildItemCompactSummary in the .jsx) where
+   the price used to sit. Single line, never wraps — same reasoning as the
+   name above: the card's height is locked to the photo, nothing here may
+   grow it. */
+.store-listing-compact-summary {
+  margin: 0.1rem 0 0;
   font-size: 0.72rem;
-  line-height: 1.4;
-  /* `white-space: nowrap` (removed) forced every pill to stay exactly as
-     wide as its unwrapped text — harmless on a wide desktop card, but on a
-     narrow phone a longer pill (e.g. "Held item: Black Belt", "Categoria:
-     Decoração") had nowhere to shrink to and just overflowed the card
-     (and, since flex containers propagate a child's overflow into their own
-     scrollWidth, the whole page) instead of wrapping. `max-width: 100%` +
-     `overflow-wrap` let a single long pill wrap onto more than one line
-     within its own rounded box instead. */
-  max-width: 100%;
+  color: var(--ps-ink, #1a1f3d);
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mundo — tinted globe icon + label, inline between name and price
+   (2026-07-18, moved off its own line same day per follow-up request; the
+   icon itself replaced a plain colored dot in an immediate follow-up).
+   `flex-shrink: 0` — it's short ("Blue", "Gold", ...) and reads best never
+   truncated; the name/price flex-shrink priority (documented above/below)
+   still governs who gives up space first when the row is tight. No `color`
+   here (2026-07-18, follow-up) — set inline per-instance in the .jsx
+   instead (WORLD_ICON_COLORS[worldValue]), on this wrapping span itself so
+   both the icon (`stroke="currentColor"`) and the label text pick up the
+   same per-world color, per explicit request that the label read in the
+   world's own color, not a fixed muted ink. `font-weight` not bumped like
+   the price below — the label's short length (a single color word) stays
+   legible at normal weight even for the lighter world colors. */
+.store-listing-world-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  flex-shrink: 0;
+  font-size: 0.78rem;
+}
+
+/* `em`-sized (not a fixed px) so it scales with the row's own font,
+   staying "do tamanho da letra" (letter-sized) as asked. No `color` of its
+   own — inherits `currentColor` from the parent .store-listing-world-inline's
+   inline per-world `color` style (see above), same as the label text
+   beside it. */
+.store-listing-world-icon {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+}
+
+/* "ver anúncio completo" modal — sectioned spec-sheet grid (2026-07-18
+   reorganization), replacing the old flat bullet-separated line
+   (.store-listing-details/.store-listing-detail-pill, removed — confirmed
+   no remaining use once this landed). */
+.store-listing-modal-section-label {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ps-ink, #1a1f3d);
+  opacity: 0.5;
+}
+
+.store-listing-price + .store-listing-modal-section-label {
+  margin-top: 0.75rem;
+}
+
+.store-listing-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.store-listing-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.store-listing-modal-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ps-ink, #1a1f3d);
+  opacity: 0.5;
+}
+
+.store-listing-modal-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ps-ink, #1a1f3d);
   overflow-wrap: break-word;
 }
 
-/* Addon-count pill is a real <button> (opens the view-only addon modal),
-   not a plain <li> like every other pill — resets the browser's default
-   button chrome (border/font/cursor) so it reads identically to the plain
-   pills at rest, with just a hover/focus cue to signal it's interactive. */
-.store-listing-detail-pill-button {
-  border: none;
-  font-family: inherit;
-  cursor: pointer;
+.store-listing-modal-notes {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+  color: var(--ps-ink, #1a1f3d);
+  opacity: 0.85;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
-.store-listing-detail-pill-button:hover,
-.store-listing-detail-pill-button:focus-visible {
-  background: rgba(46, 58, 158, 0.16);
-}
-
-/* Addon modal body — small grid of sprite + name, reusing .store-listing-photo
+/* Addon grid — small grid of sprite + name, reusing .store-listing-photo
    (already the app's established thumbnail look) for each addon instead of
-   inventing a new image treatment. */
+   inventing a new image treatment. 2026-07-18: lives directly inside the
+   unified "ver anúncio completo" modal now, no longer its own nested modal
+   opened by a separate pill click. */
 .addon-modal-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
@@ -728,7 +943,7 @@
 }
 
 .store-listing-price {
-  margin: 0.15rem 0 0;
+  margin: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
@@ -737,64 +952,160 @@
   font-size: 0.9rem;
 }
 
-.store-listing-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  width: 100%;
-}
-
-.store-listing-actions-primary {
-  display: flex;
-}
-
-.store-listing-actions-primary .landing-btn {
-  width: 100%;
-  white-space: nowrap;
-}
-
+/* Editar/Excluir/Ocultar (owner only) — small icon-only row pinned to the
+   top-right of the card (2026-07-18: no longer part of a shared row with
+   price/action button, which moved into the modal). `align-self: flex-start`
+   was originally chosen to keep this row clear of the "+" corner button
+   that used to open the modal (a vertical stack tall enough for 3 icons
+   would reach far enough down the card's ~72px content height to collide
+   with it, confirmed via measurement: ~7px overlap) — that button is gone
+   now (the name itself opens the modal instead), but the top-right
+   placement/no-pill styling stayed as-is, no reason to change it.
+   Wrapped in .store-listing-owner-controls (below) together with
+   .store-listing-status-btn — no longer its own top-level flex item. */
 .store-listing-actions-secondary {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.3rem;
 }
 
-/* Icon-only buttons (2026-07-15) — pencil/trash/eye, no visible label (moved
-   to aria-label/title for accessibility). Fixed small square instead of the
-   earlier flex-stretched text-button sizing. */
+/* Wraps the icon row + Vendido button as a column, right-aligned, pinned
+   to the top of the card row (2026-07-18) — Vendido used to be
+   `position: absolute` in the card's bottom-right corner, which read as
+   "too far down / stuck in the corner" (explicit feedback). Normal flow
+   instead: it just sits directly under the icon row, moving/sizing with
+   it instead of needing its own fixed offset. */
+.store-listing-owner-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3rem;
+  align-self: flex-start;
+  flex-shrink: 0;
+}
+
+/* Compact "Contato" CTA (2026-07-18) — the same slot .store-listing-
+   actions-secondary occupies for an owner, mutually exclusive with it (a
+   visitor never sees the edit/delete/hide icons). Small pill instead of
+   the full-width .landing-btn-primary used inside the modal — there's
+   only ~72px of row height to work with here. Same brand yellow as every
+   other primary CTA in the app (.landing-btn-primary), not a new WhatsApp
+   green, so it doesn't introduce a second "primary action" color.
+   Mobile-first: icon-only at the base size (.store-listing-contact-label
+   hidden) — the full icon+"Contato" pill measured ~85px wide, which at a
+   320-375px card left only ~24px for the name/price column, truncating a
+   name like "Teddiursa" down to "T…" (confirmed via screenshot). The label
+   only appears at min-width:860px, where the 2-column layout gives each
+   card enough width (~580px+) to spare. */
+.store-listing-contact-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem;
+  border-radius: 999px;
+  background: var(--ps-yellow, #ffcb05);
+  color: var(--ps-ink, #1a1f3d);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.store-listing-contact-btn:hover,
+.store-listing-contact-btn:focus-visible {
+  opacity: 0.85;
+}
+
+.store-listing-contact-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.store-listing-contact-label {
+  display: none;
+}
+
+@media (min-width: 860px) {
+  .store-listing-contact-btn {
+    padding: 0.4rem 0.75rem;
+  }
+
+  .store-listing-contact-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .store-listing-contact-label {
+    display: inline;
+  }
+}
+
+/* Compact "Vendido"/"Reverter venda" (2026-07-18, owner only; repositioned
+   same day — was `position: absolute` in the card's bottom-right corner,
+   moved into normal flow inside .store-listing-owner-controls, right under
+   the icon row, per explicit feedback that the corner placement read as
+   too far down/tucked away). Outline style (border + brand blue), not the
+   solid yellow of .store-listing-contact-btn — this isn't the primary
+   "come talk to us" CTA, it's a secondary management toggle. */
+.store-listing-status-btn {
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--ps-blue, #2e3a9e);
+  background: #fff;
+  color: var(--ps-blue, #2e3a9e);
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.store-listing-status-btn:hover,
+.store-listing-status-btn:focus-visible {
+  background: rgba(46, 58, 158, 0.08);
+}
+
+/* Disabled state (2026-07-21) — only exercised so far by AnalyticsTab.jsx's
+   "Reverter venda" in the sales log, while the revert PATCH+refetch is in
+   flight (StoreListingCard.jsx never passes `disabled` on this button
+   today, so this rule is inert there, not a visual change to it). */
+.store-listing-status-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #fff;
+}
+
 .store-listing-action-btn {
   flex: none;
-  width: 34px;
-  height: 34px;
+  width: 20px;
+  height: 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 8px;
-  border: 1px solid rgba(46, 58, 158, 0.25);
-  background: transparent;
+  border: none;
+  background: none;
   color: var(--ps-ink, #1a1f3d);
+  opacity: 0.65;
   cursor: pointer;
   text-decoration: none;
   font-family: inherit;
 }
 
 .store-listing-action-icon {
-  width: 17px;
-  height: 17px;
+  width: 13px;
+  height: 13px;
   flex-shrink: 0;
 }
 
-.store-listing-action-btn:hover {
-  background: rgba(46, 58, 158, 0.06);
+.store-listing-action-btn:hover,
+.store-listing-action-btn:focus-visible {
+  opacity: 1;
 }
 
 .store-listing-action-btn-danger {
-  border-color: rgba(220, 53, 69, 0.4);
   color: #a3202f;
-}
-
-.store-listing-action-btn-danger:hover {
-  background: rgba(220, 53, 69, 0.08);
 }
 
 .store-listing-action-error {
@@ -891,6 +1202,16 @@
   color: #a3202f;
 }
 
+/* Same visual treatment as .import-listing-review-hint above (a blocking
+   field-level notice, not decorative help text) — separate name since this
+   one's used outside the import-review flow (AddPokemonListing.jsx's
+   Mundo field, when the store has zero registered worlds). */
+.new-listing-field-hint {
+  margin: -0.5rem 0 0;
+  font-size: 0.78rem;
+  color: #a3202f;
+}
+
 .import-listing-suggestions {
   display: flex;
   flex-wrap: wrap;
@@ -898,6 +1219,9 @@
 }
 
 .import-listing-suggestion-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   border: 1px solid rgba(46, 58, 158, 0.25);
   background: #fff;
   color: var(--ps-ink, #1a1f3d);
@@ -909,6 +1233,18 @@
 
 .import-listing-suggestion-chip:hover {
   background: rgba(46, 58, 158, 0.08);
+}
+
+.import-listing-suggestion-thumb {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.import-listing-suggestion-subtitle {
+  opacity: 0.65;
+  font-size: 0.72rem;
 }
 
 .import-listing-done {
@@ -1017,27 +1353,5 @@
     flex: 1 1 40%;
     position: sticky;
     top: 1.25rem;
-  }
-
-  .store-listing-card {
-    flex-wrap: nowrap;
-    align-items: center;
-  }
-
-  .store-listing-actions {
-    width: auto;
-    flex-direction: row;
-    align-items: center;
-    gap: 0.85rem;
-    margin-left: auto;
-  }
-
-  .store-listing-actions-primary .landing-btn {
-    width: auto;
-  }
-
-  .store-listing-actions-secondary {
-    flex-direction: column;
-    gap: 0.35rem;
   }
 }

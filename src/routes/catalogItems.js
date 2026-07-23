@@ -57,6 +57,7 @@ router.get(
   asyncHandler(async (req, res) => {
   const {
     search,
+    nameOnly,
     category,
     excludeCategories,
     subcategory,
@@ -90,22 +91,36 @@ router.get(
   }
   if (hasImage === 'true') where.NOT = { imageUrl: '' };
   if (search) {
-    // `searchableText` is a snapshot taken at sync time and goes stale once
-    // subcategories are added later (e.g. subcategories:sync never touches it),
-    // so subcategory matches are computed live here instead of relying on it.
-    const subcategoryMatches = await prisma.$queryRaw`
-      SELECT DISTINCT "wikiPageId"
-      FROM "CatalogItem", jsonb_array_elements_text("extractedFields"->'subcategories') AS sub
-      WHERE sub ILIKE ${`%${search}%`}
-    `;
-    const subcategoryMatchIds = subcategoryMatches.map((r) => r.wikiPageId);
+    if (nameOnly === 'true') {
+      // Used by the listing-creation pickers (Pokébola/Held Item/Sticker/Item
+      // in AddPokemonListing.jsx/AddItemListing.jsx/ImportListings.jsx) —
+      // there the user is searching for one specific catalog item by the name
+      // they'd recognize, and a category/subcategory/description match would
+      // surface unrelated items under an unrelated name (e.g. searching
+      // "pokebola" matching every item tagged with that category). Deliberately
+      // different from Catalog.jsx's own browse search (no `nameOnly`, still
+      // matches broadly below) and from the storefront's own client-side
+      // filter (buildListingSearchText.js, searches every field on purpose)
+      // — neither of those is a "find the exact item to attach" picker.
+      where.name = { contains: search, mode: 'insensitive' };
+    } else {
+      // `searchableText` is a snapshot taken at sync time and goes stale once
+      // subcategories are added later (e.g. subcategories:sync never touches it),
+      // so subcategory matches are computed live here instead of relying on it.
+      const subcategoryMatches = await prisma.$queryRaw`
+        SELECT DISTINCT "wikiPageId"
+        FROM "CatalogItem", jsonb_array_elements_text("extractedFields"->'subcategories') AS sub
+        WHERE sub ILIKE ${`%${search}%`}
+      `;
+      const subcategoryMatchIds = subcategoryMatches.map((r) => r.wikiPageId);
 
-    where.OR = [
-      { name: { contains: search, mode: 'insensitive' } },
-      { category: { contains: search, mode: 'insensitive' } },
-      { searchableText: { contains: search.toLowerCase(), mode: 'insensitive' } },
-      ...(subcategoryMatchIds.length ? [{ wikiPageId: { in: subcategoryMatchIds } }] : []),
-    ];
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { category: { contains: search, mode: 'insensitive' } },
+        { searchableText: { contains: search.toLowerCase(), mode: 'insensitive' } },
+        ...(subcategoryMatchIds.length ? [{ wikiPageId: { in: subcategoryMatchIds } }] : []),
+      ];
+    }
   }
 
   const jsonFilters = [];

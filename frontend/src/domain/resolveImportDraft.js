@@ -107,23 +107,24 @@ async function resolveExactName(name, fetchCandidates) {
 }
 
 async function fetchPokeballCandidates(search) {
-  const res = await api.getCatalogItems({ category: 'pokeballs', search, pageSize: 30 });
+  const res = await api.getCatalogItems({ category: 'pokeballs', search, nameOnly: true, pageSize: 30 });
   return res.items;
 }
 
 async function fetchHeldItemCandidates(search) {
-  const res = await api.getCatalogItems({ category: 'held-items', search, pageSize: 30 });
+  const res = await api.getCatalogItems({ category: 'held-items', search, nameOnly: true, pageSize: 30 });
   return res.items;
 }
 
 async function fetchStickerCandidates(search) {
-  const res = await api.getCatalogItems({ category: 'sticker-balls', search, pageSize: 30 });
+  const res = await api.getCatalogItems({ category: 'sticker-balls', search, nameOnly: true, pageSize: 30 });
   return res.items;
 }
 
 async function fetchItemCandidates(search) {
   const res = await api.getCatalogItems({
     search,
+    nameOnly: true,
     pageSize: 30,
     excludeCategories: ITEM_PICKER_EXCLUDED_CATEGORIES.join(','),
   });
@@ -147,12 +148,8 @@ export async function resolvePokemonDraft(parsed) {
   );
 
   let megaStoneCompat = [];
-  let addonCompatAll = [];
   if (pokemon.item) {
-    [megaStoneCompat, addonCompatAll] = await Promise.all([
-      api.getMegaStonesFor(pokemon.item.wikiTitle),
-      api.getAddonsFor(pokemon.item.wikiTitle),
-    ]);
+    megaStoneCompat = await api.getMegaStonesFor(pokemon.item.wikiTitle);
   }
 
   const equippedAddon = pokemon.item
@@ -193,6 +190,11 @@ export async function resolvePokemonDraft(parsed) {
       boost: f.boost,
       nature: f.nature,
       capturedAt: f.capturedAt,
+      // Already a plain GameWorld enum value (or '') — parseLookText.js's
+      // GAME_WORLD_VALUE_BY_LABEL already did the label→enum inversion, same
+      // as `gender` above; no async catalog resolution needed, same as
+      // resolveItemDraft's `originWorld` below.
+      world: f.world,
       extraMoveCount: f.extraMoveCount,
       presetSlotCount: f.presetSlotCount,
       priceReal: f.priceReal,
@@ -201,8 +203,16 @@ export async function resolvePokemonDraft(parsed) {
     pokeball,
     pokemon,
     megaStoneCompat,
-    addonCompatAll,
     equippedAddon,
+    // The full addon set (2026-07-18, bug fix) — the pasted text only ever
+    // carries a count ("Addons: N") and the identity of the one equipped
+    // addon, never the other N-1 (documented, permanent limitation of the
+    // look-text format — see CLAUDE.md). Pre-filled with just the equipped
+    // one when resolved (never inventing the rest), same starting point
+    // AddPokemonListing.jsx's own `selectedAddons` would have for a single
+    // known addon — the user adds the rest manually via the same
+    // MultiSelectPicker the manual form uses, in ImportListings.jsx.
+    selectedAddons: equippedAddon.item ? [equippedAddon.item] : [],
     megaStone,
     heldItem,
     stickers,

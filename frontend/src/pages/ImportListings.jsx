@@ -5,7 +5,9 @@ import { auth } from '../firebase';
 import { api, getMyStore } from '../api';
 import { NewListingPageShell } from '../components/NewListingPageShell';
 import { Autocomplete } from '../components/Autocomplete';
+import { MultiSelectPicker } from '../components/MultiSelectPicker';
 import { LookPreviewCard } from '../components/LookPreviewCard';
+import { makeAddonOptionRenderer } from '../components/renderAddonOption';
 import { parseLookText } from '../domain/parseLookText';
 import { resolveImportDraft } from '../domain/resolveImportDraft';
 import { mapWithConcurrency } from '../domain/asyncPool';
@@ -23,23 +25,24 @@ import '../AddPokemonListing.css';
 const ANALYZE_CONCURRENCY = 1;
 
 async function fetchPokeballs(search) {
-  const res = await api.getCatalogItems({ category: 'pokeballs', search, pageSize: 30 });
+  const res = await api.getCatalogItems({ category: 'pokeballs', search, nameOnly: true, pageSize: 30 });
   return res.items;
 }
 
 async function fetchHeldItems(search) {
-  const res = await api.getCatalogItems({ category: 'held-items', search, pageSize: 30 });
+  const res = await api.getCatalogItems({ category: 'held-items', search, nameOnly: true, pageSize: 30 });
   return res.items;
 }
 
 async function fetchStickerBalls(search) {
-  const res = await api.getCatalogItems({ category: 'sticker-balls', search, pageSize: 30 });
+  const res = await api.getCatalogItems({ category: 'sticker-balls', search, nameOnly: true, pageSize: 30 });
   return res.items;
 }
 
 async function fetchItems(search) {
   const res = await api.getCatalogItems({
     search,
+    nameOnly: true,
     pageSize: 30,
     excludeCategories: ITEM_PICKER_EXCLUDED_CATEGORIES.join(','),
   });
@@ -54,7 +57,18 @@ async function fetchItems(search) {
 // offered as one-click suggestion chips — this is how a `needs-review` field
 // gets "pre-populated" per the plan, without needing to modify Autocomplete
 // itself (which has no prop for a pre-filled search string).
-function ResolvedFieldPicker({ label, name, resolved, fetchOptions, onChange, overriding, onToggleOverride, disabled, resetKey }) {
+function ResolvedFieldPicker({
+  label,
+  name,
+  resolved,
+  fetchOptions,
+  onChange,
+  overriding,
+  onToggleOverride,
+  disabled,
+  resetKey,
+  renderOption,
+}) {
   const showPicker = resolved.status !== 'resolved' || overriding;
 
   return (
@@ -69,6 +83,7 @@ function ResolvedFieldPicker({ label, name, resolved, fetchOptions, onChange, ov
             placeholder={name ? `Buscar (texto colado: "${name}")...` : 'Buscar...'}
             disabled={disabled}
             resetKey={resetKey}
+            renderOption={renderOption}
           />
           {resolved.status === 'needs-review' && resolved.candidates.length > 0 && (
             <div className="import-listing-suggestions">
@@ -79,7 +94,32 @@ function ResolvedFieldPicker({ label, name, resolved, fetchOptions, onChange, ov
                   className="import-listing-suggestion-chip"
                   onClick={() => onChange(candidate)}
                 >
-                  {candidate.name}
+                  {candidate.imageUrl && (
+                    <img
+                      src={candidate.imageUrl}
+                      alt=""
+                      className="import-listing-suggestion-thumb"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
+                  )}
+                  <span>
+                    {candidate.name}
+                    {/* Two catalog rows can legitimately share the exact same
+                        display name (e.g. two different "Desert Flower Addon"
+                        rows, one per compatible species) — resolveExactName
+                        then can't auto-resolve (needs exactly 1 match) and
+                        both show up here identically labeled. The thumbnail
+                        above already makes them visually distinct most of the
+                        time; wikiTitle (when it differs from the name, e.g.
+                        the species a legacy addon-compatibility row is keyed
+                        to) is a second, textual disambiguator for when it
+                        doesn't. */}
+                    {candidate.wikiTitle && candidate.wikiTitle !== candidate.name && (
+                      <span className="import-listing-suggestion-subtitle"> · {candidate.wikiTitle}</span>
+                    )}
+                  </span>
                 </button>
               ))}
             </div>
@@ -110,7 +150,7 @@ function buildPokemonPreviewText(draft) {
     genderLabel: GENDER_LABELS[draft.fields.gender],
     nature: draft.fields.nature,
     nickname: draft.fields.nickname,
-    addonCount: draft.equippedAddon.item ? 1 : undefined,
+    addonCount: draft.selectedAddons.length || undefined,
     equippedAddonName: draft.equippedAddon.item?.name,
     boost: draft.fields.boost,
     capturedAt: draft.fields.capturedAt,
@@ -174,6 +214,7 @@ function validatePokemonDraft(draft) {
   if (!draft.fields.level) return 'Informe o Nível.';
   if (!draft.fields.gender) return 'Informe o Gênero.';
   if (!draft.fields.nature) return 'Informe a Nature.';
+  if (!draft.fields.world) return 'Informe o Mundo.';
   if (draft.priceReal === '' && draft.priceHd === '') return 'Informe ao menos um preço (Real ou HD).';
   return null;
 }
@@ -191,8 +232,9 @@ function buildPokemonPayload(draft) {
     level: draft.fields.level !== '' ? Number(draft.fields.level) : undefined,
     gender: draft.fields.gender || undefined,
     nature: draft.fields.nature || undefined,
+    world: draft.fields.world || undefined,
     nickname: draft.fields.nickname?.trim() || undefined,
-    addonCatalogItemIds: draft.equippedAddon.item ? [draft.equippedAddon.item.wikiPageId] : undefined,
+    addonCatalogItemIds: draft.selectedAddons.length ? draft.selectedAddons.map((a) => a.wikiPageId) : undefined,
     equippedAddonCatalogItemId: draft.equippedAddon.item?.wikiPageId,
     boost: draft.fields.boost !== '' ? Number(draft.fields.boost) : undefined,
     capturedAt: draft.fields.capturedAt?.trim() || undefined,
@@ -233,6 +275,12 @@ export function ImportListings() {
   const navigate = useNavigate();
 
   const [pageStatus, setPageStatus] = useState('loading'); // loading | ready | redirecting
+  // Mundo options for Pokémon drafts (2026-07-18, bug fix — see CLAUDE.md):
+  // the store's own registered worlds (Store.StoreWorld), same source
+  // AddPokemonListing.jsx's Mundo select already uses — Pokémon's `world` is
+  // store-scoped, unlike Item's `originWorld` (any of the 7 GAME_WORLDS,
+  // unrestricted, see ItemDraftCard below).
+  const [worldOptions, setWorldOptions] = useState([]);
   const [rawText, setRawText] = useState('');
   const [analyzeStatus, setAnalyzeStatus] = useState('idle'); // idle | analyzing
   // { done, total } while analyzing — see asyncPool.js/handleAnalyze: each
@@ -268,6 +316,7 @@ export function ImportListings() {
           navigate(`/${slug}`, { replace: true });
           return;
         }
+        setWorldOptions((store.StoreWorld || []).map((w) => w.world));
         setPageStatus('ready');
       } catch {
         setPageStatus('redirecting');
@@ -352,9 +401,9 @@ export function ImportListings() {
       pokeball: { status: newPokeball ? 'resolved' : 'needs-review', item: newPokeball, candidates: draft.pokeball.candidates },
       pokemon: { status: 'needs-review', item: null, candidates: [] },
       megaStoneCompat: [],
-      addonCompatAll: [],
       megaStone: { status: 'empty', item: null, candidates: [] },
       equippedAddon: { status: 'empty', item: null, candidates: [] },
+      selectedAddons: [],
       maxExtraMoves: 0,
       overriding: { ...draft.overriding, pokeball: false },
     }));
@@ -366,24 +415,22 @@ export function ImportListings() {
       pokemon: { status: newPokemon ? 'resolved' : 'needs-review', item: newPokemon, candidates: draft.pokemon.candidates },
       megaStone: { status: 'empty', item: null, candidates: [] },
       equippedAddon: { status: 'empty', item: null, candidates: [] },
+      selectedAddons: [],
       megaStoneCompat: [],
-      addonCompatAll: [],
       maxExtraMoves: 0,
       overriding: { ...draft.overriding, pokemon: false },
     }));
 
     if (!newPokemon) return;
 
-    const [megaStoneCompat, addonCompatAll, cap] = await Promise.all([
+    const [megaStoneCompat, cap] = await Promise.all([
       api.getMegaStonesFor(newPokemon.wikiTitle),
-      api.getAddonsFor(newPokemon.wikiTitle),
       api.getExtraMovesCap(newPokemon.wikiPageId),
     ]);
 
     updateDraft(index, (draft) => ({
       ...draft,
       megaStoneCompat: megaStoneCompat || [],
-      addonCompatAll: addonCompatAll || [],
       maxExtraMoves: cap?.maxExtraMoves ?? 0,
     }));
   }
@@ -394,6 +441,27 @@ export function ImportListings() {
       [fieldKey]: { status: newItem ? 'resolved' : 'empty', item: newItem, candidates: draft[fieldKey].candidates },
       overriding: { ...draft.overriding, [fieldKey]: false },
     }));
+  }
+
+  // Addon multi-select toggle (2026-07-18, bug fix) — same shape as
+  // AddPokemonListing.jsx's own `toggleAddon`, adapted to update the draft
+  // at `index` via `updateDraft` instead of a local `useState`. If the
+  // equipped addon is toggled off, it's cleared too — same "equippedAddon
+  // is always a member of selectedAddons" invariant the manual form keeps.
+  function toggleDraftAddon(index, item) {
+    updateDraft(index, (draft) => {
+      const exists = draft.selectedAddons.some((a) => a.wikiPageId === item.wikiPageId);
+      const selectedAddons = exists
+        ? draft.selectedAddons.filter((a) => a.wikiPageId !== item.wikiPageId)
+        : [...draft.selectedAddons, item];
+      const equippedStillSelected =
+        draft.equippedAddon.item && selectedAddons.some((a) => a.wikiPageId === draft.equippedAddon.item.wikiPageId);
+      return {
+        ...draft,
+        selectedAddons,
+        equippedAddon: equippedStillSelected ? draft.equippedAddon : { status: 'empty', item: null, candidates: [] },
+      };
+    });
   }
 
   function handleStickerChange(index, stickerIndex, newItem) {
@@ -591,10 +659,12 @@ export function ImportListings() {
                   <PokemonDraftCard
                     draft={draft}
                     index={activeDraftIndex}
+                    worldOptions={worldOptions}
                     onFieldChange={setDraftField}
                     onPokeballChange={handlePokeballChange}
                     onPokemonChange={handlePokemonChange}
                     onSimpleFieldChange={handleSimpleFieldChange}
+                    onAddonToggle={toggleDraftAddon}
                     onStickerChange={handleStickerChange}
                     onToggleOverride={toggleOverride}
                     onSetPrice={(field, value) => updateDraft(activeDraftIndex, (d) => ({ ...d, [field]: value }))}
@@ -624,10 +694,12 @@ export function ImportListings() {
 function PokemonDraftCard({
   draft,
   index,
+  worldOptions,
   onFieldChange,
   onPokeballChange,
   onPokemonChange,
   onSimpleFieldChange,
+  onAddonToggle,
   onStickerChange,
   onToggleOverride,
   onSetPrice,
@@ -636,6 +708,15 @@ function PokemonDraftCard({
   const restrictToCherishBall = draft.pokeball.item?.name === 'Cherish Ball';
   const genderOptions = draft.pokemon.item?.genderOptions || (draft.fields.gender ? [draft.fields.gender] : []);
   const previewText = buildPokemonPreviewText(draft);
+  const renderAddonOption = makeAddonOptionRenderer(draft.pokemon.item?.name);
+  // Same fallback AddPokemonListing.jsx's own Mundo select already uses — if
+  // this draft's parsed world was later removed from the store's registered
+  // worlds, still show it as a selectable option instead of silently
+  // dropping it (never lose data the pasted text actually had).
+  const effectiveWorldOptions =
+    draft.fields.world && !worldOptions.includes(draft.fields.world)
+      ? [...worldOptions, draft.fields.world]
+      : worldOptions;
 
   return (
     <div className="new-listing-form import-listing-draft-card">
@@ -646,10 +727,11 @@ function PokemonDraftCard({
           Linhas não reconhecidas (ignoradas): {draft.unrecognizedLines.join(' | ')}
         </p>
       )}
-      {draft.fields.addonCount > 1 && (
+      {draft.fields.addonCount > draft.selectedAddons.length && (
         <p className="import-listing-warning">
           O texto colado diz {draft.fields.addonCount} addons, mas só conseguimos identificar{' '}
-          {draft.equippedAddon.item ? 1 : 0} pelo nome — adicione os outros manualmente se quiser.
+          {draft.selectedAddons.length} pelo nome (o equipado) — use o campo "Addons" abaixo pra
+          marcar os outros manualmente.
         </p>
       )}
 
@@ -710,21 +792,78 @@ function PokemonDraftCard({
       </label>
 
       <label>
+        Mundo *
+        <select
+          value={draft.fields.world}
+          onChange={(e) => onFieldChange(index, 'world', e.target.value)}
+          disabled={worldOptions.length === 0}
+        >
+          <option value="">Selecione...</option>
+          {effectiveWorldOptions.map((w) => (
+            <option key={w} value={w}>
+              {GAME_WORLD_LABELS[w] || w}
+            </option>
+          ))}
+        </select>
+      </label>
+      {worldOptions.length === 0 && (
+        <p className="new-listing-field-hint">
+          Sua loja ainda não tem nenhum mundo cadastrado — adicione um em Configurações antes de
+          confirmar um anúncio de Pokémon.
+        </p>
+      )}
+
+      <label>
         Nickname
         <input type="text" value={draft.fields.nickname} onChange={(e) => onFieldChange(index, 'nickname', e.target.value)} />
       </label>
 
-      {draft.addonCompatAll.length > 0 && (
-        <ResolvedFieldPicker
-          label="Usando (addon equipado)"
-          name={draft.fields.equippedAddonName || undefined}
-          resolved={draft.equippedAddon}
-          fetchOptions={(search) => api.getAddonsFor(draft.pokemon.item.wikiTitle, search)}
-          onChange={(item) => onSimpleFieldChange(index, 'equippedAddon', item)}
-          overriding={draft.overriding.equippedAddon}
-          onToggleOverride={() => onToggleOverride(index, 'equippedAddon')}
+      {/* Full addon set (2026-07-18, bug fix) — the pasted text only ever
+          carries a count ("Addons: N") and the identity of the ONE equipped
+          addon, never the other N-1 (permanent limitation of the look-text
+          format, documented in CLAUDE.md) — before this field existed, there
+          was no way to mark the rest at all, only the single auto-resolved
+          equipped one. Same MultiSelectPicker/renderAddonOption
+          AddPokemonListing.jsx's own "Addons" field uses, pre-filled with
+          just the equipped addon (resolveImportDraft.js's
+          `selectedAddons`), never inventing the rest. */}
+      <div className="new-listing-multiselect">
+        <span className="new-listing-multiselect-label">Addons</span>
+        <MultiSelectPicker
+          fetchOptions={(search) =>
+            draft.pokemon.item ? api.getAddonsFor(draft.pokemon.item.wikiTitle, search) : Promise.resolve([])
+          }
+          selected={draft.selectedAddons}
+          onToggle={(item) => onAddonToggle(index, item)}
+          placeholder="Buscar addon..."
+          disabled={!draft.pokemon.item}
           resetKey={draft.pokemon.item?.wikiPageId}
+          renderOption={renderAddonOption}
         />
+      </div>
+
+      {draft.selectedAddons.length > 0 && (
+        <label>
+          Usando (addon equipado)
+          <select
+            value={draft.equippedAddon.item?.wikiPageId ?? ''}
+            onChange={(e) => {
+              const id = e.target.value ? Number(e.target.value) : null;
+              onSimpleFieldChange(
+                index,
+                'equippedAddon',
+                id ? draft.selectedAddons.find((a) => a.wikiPageId === id) || null : null
+              );
+            }}
+          >
+            <option value="">Nenhum</option>
+            {draft.selectedAddons.map((addon) => (
+              <option key={addon.wikiPageId} value={addon.wikiPageId}>
+                {addon.name}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
 
       <label>

@@ -4,6 +4,8 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
 import { getMyStore, updateStore } from '../api';
 import { WordmarkLink } from '../components/WordmarkLink';
+import { GAME_WORLDS } from '../domain/gameConstants';
+import { GAME_WORLD_LABELS } from '../domain/buildItemLookText';
 import '../Landing.css';
 
 // Mirrors src/routes/stores.js's slugify — cosmetic only, the backend is the
@@ -18,8 +20,6 @@ function slugifyPreview(value) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 }
-
-const CONTACT_FIELDS = ['whatsapp', 'discord', 'telegram'];
 
 export function StoreSettings() {
   const navigate = useNavigate();
@@ -37,8 +37,7 @@ export function StoreSettings() {
   const [gameNickname, setGameNickname] = useState('');
   const [description, setDescription] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
-  const [discord, setDiscord] = useState('');
-  const [telegram, setTelegram] = useState('');
+  const [worlds, setWorlds] = useState([]);
 
   // idle | saving | saved | error
   const [saveStatus, setSaveStatus] = useState('idle');
@@ -75,8 +74,7 @@ export function StoreSettings() {
           gameNickname: store.gameNickname || '',
           description: store.description || '',
           whatsapp: store.whatsapp || '',
-          discord: store.discord || '',
-          telegram: store.telegram || '',
+          worlds: (store.StoreWorld || []).map((w) => w.world),
         };
         setInitialValues(values);
         setName(values.name);
@@ -84,8 +82,7 @@ export function StoreSettings() {
         setGameNickname(values.gameNickname);
         setDescription(values.description);
         setWhatsapp(values.whatsapp);
-        setDiscord(values.discord);
-        setTelegram(values.telegram);
+        setWorlds(values.worlds);
         setPageStatus('ready');
       } catch {
         setPageStatus('redirecting');
@@ -111,13 +108,22 @@ export function StoreSettings() {
       return;
     }
 
-    const current = { name, slug, gameNickname, description, whatsapp, discord, telegram };
+    const current = { name, slug, gameNickname, description, whatsapp };
     const payload = {};
     Object.entries(current).forEach(([key, value]) => {
       if (value.trim() !== initialValues[key].trim()) {
         payload[key] = value.trim();
       }
     });
+
+    // worlds is an array, not a string — compared/sent separately from the
+    // generic .trim()-based diff above (order doesn't matter, so sort
+    // before comparing).
+    const worldsChanged =
+      [...worlds].sort().join(',') !== [...initialValues.worlds].sort().join(',');
+    if (worldsChanged) {
+      payload.worlds = worlds;
+    }
 
     if (Object.keys(payload).length === 0) {
       setSaveStatus('saved');
@@ -149,16 +155,16 @@ export function StoreSettings() {
         gameNickname: updated.gameNickname || '',
         description: updated.description || '',
         whatsapp: updated.whatsapp || '',
-        discord: updated.discord || '',
-        telegram: updated.telegram || '',
+        worlds: (updated.StoreWorld || []).map((w) => w.world),
       };
       setInitialValues(values);
+      setWorlds(values.worlds);
       setSaveStatus('saved');
     } catch (err) {
       setSaveStatus('error');
       if (err.status === 409) {
         // Contact conflicts come with `field`; a slug conflict doesn't
-        // (the backend only attaches `field` for whatsapp/discord/telegram),
+        // (the backend only attaches `field` for whatsapp),
         // so absence of `field` here means it was the slug itself.
         const field = err.field || 'slug';
         setFieldError({ field, message: err.message });
@@ -181,6 +187,12 @@ export function StoreSettings() {
 
   function fieldErrorFor(field) {
     return fieldError?.field === field ? fieldError.message : null;
+  }
+
+  function toggleWorld(world) {
+    setWorlds((current) =>
+      current.includes(world) ? current.filter((w) => w !== world) : [...current, world]
+    );
   }
 
   if (pageStatus !== 'ready') {
@@ -275,31 +287,21 @@ export function StoreSettings() {
               <p className="landing-auth-field-error">{fieldErrorFor('whatsapp')}</p>
             )}
 
-            <label>
-              Discord
-              <input
-                type="text"
-                value={discord}
-                onChange={(e) => setDiscord(e.target.value)}
-                disabled={saveStatus === 'saving'}
-              />
-            </label>
-            {fieldErrorFor('discord') && (
-              <p className="landing-auth-field-error">{fieldErrorFor('discord')}</p>
-            )}
-
-            <label>
-              Telegram
-              <input
-                type="text"
-                value={telegram}
-                onChange={(e) => setTelegram(e.target.value)}
-                disabled={saveStatus === 'saving'}
-              />
-            </label>
-            {fieldErrorFor('telegram') && (
-              <p className="landing-auth-field-error">{fieldErrorFor('telegram')}</p>
-            )}
+            <fieldset className="landing-auth-fieldset" disabled={saveStatus === 'saving'}>
+              <legend>Mundo(s) da loja</legend>
+              <div className="landing-auth-checkbox-grid">
+                {GAME_WORLDS.map((world) => (
+                  <label key={world} className="landing-auth-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={worlds.includes(world)}
+                      onChange={() => toggleWorld(world)}
+                    />
+                    {GAME_WORLD_LABELS[world]}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
 
             {saveStatus === 'error' && errorMessage && (
               <p className="landing-auth-error">{errorMessage}</p>

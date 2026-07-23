@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { auth } from '../firebase';
 import { createStore, getMyStore } from '../api';
 import { WordmarkLink } from '../components/WordmarkLink';
+import { GAME_WORLDS } from '../domain/gameConstants';
+import { GAME_WORLD_LABELS } from '../domain/buildItemLookText';
 import '../Landing.css';
 
 // Preview-only slugify — mirrors src/routes/stores.js's slugify (lowercase,
@@ -28,12 +30,17 @@ export function SetupShop() {
   const [gameNickname, setGameNickname] = useState('');
   const [description, setDescription] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
-  const [discord, setDiscord] = useState('');
-  const [telegram, setTelegram] = useState('');
+  const [worlds, setWorlds] = useState([]);
   const [status, setStatus] = useState('idle'); // idle | loading | error
   const [errorMessage, setErrorMessage] = useState('');
 
   const slugPreview = useMemo(() => slugifyPreview(name), [name]);
+
+  function toggleWorld(world) {
+    setWorlds((current) =>
+      current.includes(world) ? current.filter((w) => w !== world) : [...current, world]
+    );
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -60,8 +67,7 @@ export function SetupShop() {
         gameNickname: gameNickname.trim() || undefined,
         description: description.trim() || undefined,
         whatsapp: whatsapp.trim() || undefined,
-        discord: discord.trim() || undefined,
-        telegram: telegram.trim() || undefined,
+        worlds: worlds.length ? worlds : undefined,
       });
       navigate(`/${store.slug}`);
     } catch (err) {
@@ -158,27 +164,26 @@ export function SetupShop() {
               />
             </label>
 
-            <label>
-              Discord
-              <input
-                type="text"
-                value={discord}
-                onChange={(e) => setDiscord(e.target.value)}
-                placeholder="Opcional"
-                disabled={status === 'loading'}
-              />
-            </label>
-
-            <label>
-              Telegram
-              <input
-                type="text"
-                value={telegram}
-                onChange={(e) => setTelegram(e.target.value)}
-                placeholder="Opcional"
-                disabled={status === 'loading'}
-              />
-            </label>
+            {/* Mundo(s) — opcional na loja, mas o formulário de anúncio de
+                Pokémon exige um mundo por listagem (StorePokemon.world não é
+                nullable), então sem nenhum mundo cadastrado aqui o dono não
+                vai conseguir anunciar Pokémon até editar isso depois nas
+                configurações. */}
+            <fieldset className="landing-auth-fieldset" disabled={status === 'loading'}>
+              <legend>Mundo(s) da loja</legend>
+              <div className="landing-auth-checkbox-grid">
+                {GAME_WORLDS.map((world) => (
+                  <label key={world} className="landing-auth-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={worlds.includes(world)}
+                      onChange={() => toggleWorld(world)}
+                    />
+                    {GAME_WORLD_LABELS[world]}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
 
             {status === 'error' && <p className="landing-auth-error">{errorMessage}</p>}
 

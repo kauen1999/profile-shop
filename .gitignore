@@ -5,3 +5,13 @@ data/wiki-crawl/
 public/images/
 public/images-backup-shiny-recenter/
 pre-*-backup*.json
+.vercel
+.env*
+# One-off debug/investigation scripts belong in the agent scratchpad, not
+# the repo — 3 of these were found sitting untracked in the root during
+# the 2026-07-22 audit and had to be cleaned up by hand.
+_tmp_*.js
+# Claude Code's own runtime lock file (live PID + timestamp) — machine/
+# process-specific tooling state, not source. .claude/agents/*.md stays
+# tracked (that's real project config), only this lock file is ignored.
+.claude/scheduled_tasks.lock

@@ -68,6 +68,12 @@ const POKEMON_LABEL_FIELDS = {
   stickers: 'stickerNamesRaw',
   'extra moves': 'extraMoveCountRaw',
   'preset slots': 'presetSlotCountRaw',
+  // Export-only line (buildExportText.js's buildWorldLine, 2026-07-18) —
+  // never part of the real in-game look text, only this app's own round-trip
+  // format. Label is just "Mundo" (not "Mundo de Origem", the Item label
+  // below) — distinct key, no collision, since Pokémon/Item blocks are
+  // parsed by separate functions against separate label maps anyway.
+  mundo: 'worldLabelRaw',
   'preço real': 'priceRealRaw',
   'preço hd': 'priceHdRaw',
 };
@@ -95,6 +101,13 @@ const ITEM_LABEL_FIELDS = {
   'número de série': 'serialNumber',
   data: 'acquiredAt',
   'mundo de origem': 'originWorldLabelRaw',
+  // Alias (2026-07-18, bug fix) — a real look pasted from the game can label
+  // this line just "Mundo" instead of "Mundo de Origem" (buildItemLookText.js
+  // only ever generates "Mundo de Origem", but that's our own reproduction,
+  // not necessarily every real variant the game shows); before this alias,
+  // a plain "Mundo:" line matched no key in this map and silently fell into
+  // `notes` instead of `originWorld` (confirmed reported by the user).
+  mundo: 'originWorldLabelRaw',
   quantidade: 'quantityRaw',
   'preço real': 'priceRealRaw',
   'preço hd': 'priceHdRaw',
@@ -150,6 +163,7 @@ function parsePokemonBlock(block, match, restLines) {
     stickerNamesRaw: '',
     extraMoveCountRaw: '',
     presetSlotCountRaw: '',
+    worldLabelRaw: '',
     priceRealRaw: '',
     priceHdRaw: '',
   };
@@ -189,6 +203,7 @@ function parsePokemonBlock(block, match, restLines) {
         .filter(Boolean)
         .map(fromSealName)
     : [];
+  const world = GAME_WORLD_VALUE_BY_LABEL[fields.worldLabelRaw.toLowerCase()] || '';
   const priceReal = fields.priceRealRaw ? parsePriceRealRaw(fields.priceRealRaw) : '';
   const priceHd = fields.priceHdRaw ? parsePriceHdRaw(fields.priceHdRaw) : '';
 
@@ -209,6 +224,7 @@ function parsePokemonBlock(block, match, restLines) {
       heldItemName: fields.heldItemName,
       megaStoneName: fields.megaStoneName,
       stickerNames,
+      world,
       extraMoveCount,
       presetSlotCount,
       priceReal,

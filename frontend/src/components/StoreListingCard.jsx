@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { api } from '../api';
 import { buildWhatsappLink } from '../domain/buildWhatsappLink';
 import { GENDER_LABELS } from '../domain/buildPokemonLookText';
 import { GAME_WORLD_LABELS } from '../domain/buildItemLookText';
 import { getBoostGlowColor } from '../domain/getBoostGlowColor';
 import { formatCategoryLabel } from '../domain/formatCategoryLabel';
+import { formatHdCompact } from '../domain/formatHdCompact';
 import { isShinyPokemonName, resolveAddonLooktypeUrl } from '../domain/resolveAddonSprite';
 import { Modal } from './Modal';
 
@@ -51,64 +53,159 @@ function EyeOffIcon(props) {
   );
 }
 
-// Compact card version of every field AddPokemonListing.jsx's form can set —
-// same "omit if empty/default" principle buildPokemonLookText.js uses for
-// the creation-flow preview (never show a field just because the row has
-// the key, only when it actually has a real value), but flattened into a
-// list of short strings for pill/badge display instead of a multi-line
-// "look" block — this card is a summary, not a second LookPreviewCard.
-function buildPokemonCardDetails(raw) {
-  const details = [];
-
-  if (raw.nickname) details.push(`Apelido: ${raw.nickname}`);
-  if (raw.level != null) details.push(`Nível: ${raw.level}`);
-  if (raw.gender) details.push(`Gênero: ${GENDER_LABELS[raw.gender] || raw.gender}`);
-  if (raw.nature) details.push(`Nature: ${raw.nature}`);
-  if (raw.boost) details.push(`Boost: +${raw.boost}`);
-  if (raw.capturedAt) details.push(`Capturado em: ${raw.capturedAt}`);
-
-  const heldItemName = raw.CatalogItem_StorePokemon_heldItemCatalogItemIdToCatalogItem?.name;
-  if (heldItemName) details.push(`Held item: ${heldItemName}`);
-
-  const megaStoneName = raw.CatalogItem_StorePokemon_megaStoneCatalogItemIdToCatalogItem?.name;
-  if (megaStoneName) details.push(`Mega Stone: ${megaStoneName}`);
-
-  // Addon count moved out of this plain-text list — StoreListingCard
-  // renders it as its own clickable pill (opens the view-only addon modal),
-  // not a static string, so it's handled directly in the component below
-  // rather than here. Only the equipped addon (purely informative) stays a
-  // plain pill.
-  const equippedAddonName = raw.CatalogItem_StorePokemon_equippedAddonCatalogItemIdToCatalogItem?.name;
-  if (equippedAddonName) details.push(`Usando: ${equippedAddonName}`);
-
-  const stickerCount = raw.StorePokemonSticker?.length || 0;
-  if (stickerCount > 0) details.push(`Stickers: ${stickerCount}`);
-
-  if (raw.extraMoveCount > 0) details.push(`Extra Moves: +${raw.extraMoveCount}`);
-  if (raw.presetSlotCount > 0) details.push(`Preset Slots: ${raw.presetSlotCount}`);
-
-  return details;
+// Standard WhatsApp glyph — same brand-mark spirit as the WhatsApp/Discord/
+// Telegram icons already used elsewhere in this app (StoreProfile.jsx),
+// recreated here since none of those were exported for reuse.
+function WhatsAppIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.79.47 3.46 1.32 4.91L2 22l5.32-1.4a9.87 9.87 0 0 0 4.72 1.2h.01c5.46 0 9.9-4.45 9.9-9.91C21.95 6.45 17.5 2 12.04 2zm5.76 14.11c-.24.68-1.4 1.3-1.93 1.38-.5.08-1.14.11-1.84-.12-.43-.14-.98-.32-1.68-.62-2.96-1.28-4.9-4.26-5.05-4.46-.15-.2-1.21-1.61-1.21-3.07 0-1.46.77-2.18 1.04-2.48.27-.3.6-.37.8-.37.2 0 .4 0 .58.01.19.01.44-.07.68.52.25.6.85 2.08.92 2.23.07.15.12.33.02.53-.1.2-.15.32-.3.5-.15.18-.31.4-.44.54-.15.15-.3.32-.13.62.17.3.76 1.26 1.64 2.04 1.13 1 2.08 1.32 2.38 1.47.3.15.48.13.66-.08.18-.2.75-.87.95-1.17.2-.3.4-.25.68-.15.28.1 1.77.84 2.08 1 .31.15.51.23.59.36.08.13.08.75-.16 1.43z" />
+    </svg>
+  );
 }
 
-// Same principle as buildPokemonCardDetails above, for items — every
+// Globe/Earth glyph for the Mundo indicator (2026-07-18, replacing a plain
+// colored dot) — stroke-based (not fill, unlike the other icons in this
+// file), the standard way to draw a recognizable globe: a circle + a
+// horizontal meridian + a vertical lens-shaped meridian. `currentColor`
+// throughout, so the caller tints it per-world via the `color` CSS
+// property (see WORLD_DOT_COLORS below) instead of a separate fill prop.
+function EarthIcon(props) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      <circle cx="12" cy="12" r="10" />
+      <line x1="2" y1="12" x2="22" y2="12" />
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+    </svg>
+  );
+}
+
+// Full field list for the "ver anúncio completo" modal (2026-07-18 rewrite)
+// — every field AddPokemonListing.jsx's form can set, as {label, value}
+// pairs for a 2-column spec-sheet grid instead of a flat bullet line (the
+// "organize melhor" ask). Same "omit if empty/default" principle as
+// buildPokemonLookText.js's preview. Previously missing Pokébola and Mundo
+// entirely (confirmed: neither appeared anywhere on the card or modal,
+// despite both being required fields on every listing) — added here.
+function buildPokemonModalFields(raw) {
+  const pokeballName = raw.CatalogItem_StorePokemon_pokeballCatalogItemIdToCatalogItem?.name;
+  const heldItemName = raw.CatalogItem_StorePokemon_heldItemCatalogItemIdToCatalogItem?.name;
+  const megaStoneName = raw.CatalogItem_StorePokemon_megaStoneCatalogItemIdToCatalogItem?.name;
+  const equippedAddonName = raw.CatalogItem_StorePokemon_equippedAddonCatalogItemIdToCatalogItem?.name;
+  const stickerCount = raw.StorePokemonSticker?.length || 0;
+
+  return [
+    { label: 'Apelido', value: raw.nickname },
+    { label: 'Pokébola', value: pokeballName },
+    { label: 'Nível', value: raw.level },
+    { label: 'Gênero', value: raw.gender && (GENDER_LABELS[raw.gender] || raw.gender) },
+    { label: 'Nature', value: raw.nature },
+    { label: 'Mundo', value: raw.world && (GAME_WORLD_LABELS[raw.world] || raw.world) },
+    { label: 'Boost', value: raw.boost ? `+${raw.boost}` : null },
+    { label: 'Capturado em', value: raw.capturedAt },
+    { label: 'Held item', value: heldItemName },
+    { label: 'Mega Stone', value: megaStoneName },
+    { label: 'Usando (equipado)', value: equippedAddonName },
+    { label: 'Extra Moves', value: raw.extraMoveCount > 0 ? `+${raw.extraMoveCount}` : null },
+    { label: 'Preset Slots', value: raw.presetSlotCount > 0 ? raw.presetSlotCount : null },
+    { label: 'Stickers', value: stickerCount > 0 ? stickerCount : null },
+  ].filter((field) => field.value != null && field.value !== '');
+}
+
+// Same principle as buildPokemonModalFields above, for items — every
 // optional field AddItemListing.jsx's form can set, per its 2026-07-14
-// simplification, is always available directly on the row (no template
-// re-derivation needed here; the card never needs to know which template a
-// field "belongs" to, only whether it's actually filled in).
-function buildItemCardDetails(raw) {
-  const details = [];
+// simplification, is always available directly on the row. `notes` is
+// deliberately excluded (returned separately by the caller) — free text
+// doesn't fit a label/value grid cell well.
+function buildItemModalFields(raw) {
+  const categoryLabel = formatCategoryLabel(raw.CatalogItem?.category);
+
+  return [
+    { label: 'Categoria', value: categoryLabel },
+    { label: 'Quantidade', value: raw.quantity > 1 ? raw.quantity : null },
+    { label: 'Número de Série', value: raw.serialNumber },
+    { label: 'Data', value: raw.acquiredAt },
+    { label: 'Mundo de Origem', value: raw.originWorld && (GAME_WORLD_LABELS[raw.originWorld] || raw.originWorld) },
+  ].filter((field) => field.value != null && field.value !== '');
+}
+
+// Compact-card price: a single string (not the 2-<span> layout used inside
+// the modal) so CSS ellipsis can truncate it reliably as one text node.
+function buildCompactPriceText(priceReal, priceHd) {
+  const parts = [];
+  if (priceReal != null) parts.push(`R$ ${priceReal}`);
+  if (priceHd != null) parts.push(formatHdCompact(priceHd));
+  return parts.join(' · ');
+}
+
+// Second compact-card line for Pokémon (2026-07-18) — replaces the old
+// full detail-pill list with a single terse stat line, game-notation style
+// (e.g. "M · Bashful · lvl100 · +8 · 10 addons · 2 ext mov · 3 preset"),
+// per explicit request. Only fields with a real value appear, same
+// omit-if-empty principle as everywhere else in this file. `addonCount` is
+// passed in rather than read off `raw` directly — the real count is
+// `addonEntries.length` (the live StorePokemonAddon relation), not the
+// denormalized `raw.addonCount` column. `Mundo` (world) isn't in this
+// string — it renders as its own tinted-globe-icon chip between the name
+// and price instead, see .store-listing-world-inline in the component
+// below.
+function buildPokemonCompactSummary(raw, addonCount) {
+  const parts = [];
+
+  if (raw.gender === 'macho') parts.push('M');
+  else if (raw.gender === 'femea') parts.push('F');
+
+  if (raw.nature) parts.push(raw.nature);
+  if (raw.level != null) parts.push(`lvl${raw.level}`);
+  if (raw.boost) parts.push(`+${raw.boost}`);
+  if (addonCount > 0) parts.push(`${addonCount} addons`);
+  if (raw.extraMoveCount > 0) parts.push(`${raw.extraMoveCount} ext mov`);
+  if (raw.presetSlotCount > 0) parts.push(`${raw.presetSlotCount} preset`);
+
+  return parts.join(' · ');
+}
+
+// Second compact-card line for Items (2026-07-18, follow-up request) — the
+// item equivalent of buildPokemonCompactSummary above: just category now
+// (Mundo de Origem moved to its own dot-marked line, see below). Items
+// don't have the level/nature/boost/addon stats Pokémon have, so this line
+// is much shorter — still omit-if-empty, still terse. Quantidade added
+// same day, second follow-up — only shown above 1 (a lone item doesn't
+// need "1×" clutter), same threshold buildItemCardDetails/
+// buildItemModalFields already use.
+function buildItemCompactSummary(raw) {
+  const parts = [];
 
   const categoryLabel = formatCategoryLabel(raw.CatalogItem?.category);
-  if (categoryLabel) details.push(categoryLabel);
+  if (categoryLabel) parts.push(categoryLabel);
+  if (raw.quantity > 1) parts.push(`${raw.quantity}×`);
 
-  if (raw.quantity > 1) details.push(`Quantidade: ${raw.quantity}`);
-  if (raw.serialNumber) details.push(`Número de Série: ${raw.serialNumber}`);
-  if (raw.acquiredAt) details.push(`Data: ${raw.acquiredAt}`);
-  if (raw.originWorld) details.push(`Mundo de Origem: ${GAME_WORLD_LABELS[raw.originWorld] || raw.originWorld}`);
-  if (raw.notes) details.push(raw.notes);
-
-  return details;
+  return parts.join(' · ');
 }
+
+// Tint color per GameWorld value (2026-07-18) — matches the world's own
+// name (the enum is literally color-named), so the globe icon beside
+// "Blue"/"Gold"/etc. reads as that color at a glance, not an arbitrary
+// palette. Was a plain colored dot before; swapped for a tinted globe icon
+// (EarthIcon above) per follow-up request the same day.
+const WORLD_ICON_COLORS = {
+  BLUE: '#2e6fdb',
+  GREEN: '#2ea043',
+  RED: '#e5484d',
+  BLACK: '#1a1a1a',
+  PURPLE: '#8b5cf6',
+  SILVER: '#adb5bd',
+  GOLD: '#d4af37',
+};
 
 // One card per listing (item or Pokémon), driving StoreProfile.jsx's unified
 // storefront. Strict 3-zone layout: photo (left) | info (center) | actions
@@ -131,21 +228,21 @@ export function StoreListingCard({ listing, isOwner, slug, storeWhatsapp, onStat
   const { kind, id, name, imageUrl, priceReal, priceHd, status, raw } = listing;
   const isHidden = status === 'HIDDEN';
   const isSold = status === 'SOLD';
-  const [addonModalOpen, setAddonModalOpen] = useState(false);
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
 
   const editHref =
     kind === 'pokemon' ? `/${slug}/anuncios/pokemon/${id}/editar` : `/${slug}/anuncios/item/${id}/editar`;
 
   const whatsappLink = !isOwner ? buildWhatsappLink(storeWhatsapp, name) : null;
 
-  const details = kind === 'pokemon' ? buildPokemonCardDetails(raw) : buildItemCardDetails(raw);
+  const modalFields = kind === 'pokemon' ? buildPokemonModalFields(raw) : buildItemModalFields(raw);
 
-  // Addon count is its own clickable pill (opens a view-only modal listing
-  // every selected addon with its sprite), not a plain-text detail — see
-  // buildPokemonCardDetails above for why the equipped addon stays a plain
-  // pill instead. No fetch here: `StorePokemonAddon` (with `CatalogItem`
-  // nested) already comes fully loaded from `GET /stores/:slug`.
+  // No fetch here: `StorePokemonAddon` (with `CatalogItem` nested) already
+  // comes fully loaded from `GET /stores/:slug`.
   const addonEntries = kind === 'pokemon' ? raw.StorePokemonAddon || [] : [];
+
+  const compactSummary =
+    kind === 'pokemon' ? buildPokemonCompactSummary(raw, addonEntries.length) : buildItemCompactSummary(raw);
 
   // Needed to resolve each addon's looktype sprite (the Pokémon actually
   // wearing it) below — both already come from the same base-Pokémon
@@ -157,6 +254,17 @@ export function StoreListingCard({ listing, isOwner, slug, storeWhatsapp, onStat
   // Boost System aura (see getBoostGlowColor.js) — only ever applies to
   // Pokémon listings; items have no `boost` field at all.
   const boostGlowColor = kind === 'pokemon' ? getBoostGlowColor(raw.boost) : null;
+
+  const displayName = name || (kind === 'pokemon' ? 'Pokémon' : 'Item');
+  const compactPriceText = buildCompactPriceText(priceReal, priceHd);
+
+  // Mundo — own line with a colored dot (2026-07-18), not folded into the
+  // stat-line text like the rest of buildPokemonCompactSummary/
+  // buildItemCompactSummary above. `world` (Pokémon) vs. `originWorld`
+  // (Item) — different column name per kind, same StoreItem/StorePokemon
+  // pattern every other per-kind field in this file already follows.
+  const worldValue = kind === 'pokemon' ? raw.world : raw.originWorld;
+  const worldLabel = worldValue && (GAME_WORLD_LABELS[worldValue] || worldValue);
 
   return (
     <div className={`store-listing-card${status && status !== 'ACTIVE' ? ' store-listing-card-dimmed' : ''}`}>
@@ -180,63 +288,57 @@ export function StoreListingCard({ listing, isOwner, slug, storeWhatsapp, onStat
             </span>
           )}
 
-          <h3 className="store-listing-name">{name || (kind === 'pokemon' ? 'Pokémon' : 'Item')}</h3>
+          <div className="store-listing-name-row">
+            <h3 className="store-listing-name">
+              {/* 2026-07-18: the "+" corner button is gone — the name
+                  itself is now the trigger for "ver anúncio completo". */}
+              <button
+                type="button"
+                className="store-listing-name-btn"
+                onClick={() => {
+                  setDetailsModalOpen(true);
+                  // Analytics view ping (2026-07-21) — only real visitors
+                  // count as a "view"; the owner opening their own modal
+                  // never counts. Fire-and-forget, mirrors the visit ping
+                  // in StoreProfile.jsx.
+                  if (!isOwner) {
+                    api.recordListingView(slug, { kind: kind.toUpperCase(), listingId: id }).catch(() => {});
+                  }
+                }}
+                aria-label={`Ver anúncio completo de ${displayName}`}
+                title="Ver anúncio completo"
+              >
+                {displayName}
+              </button>
+            </h3>
 
-          {(details.length > 0 || addonEntries.length > 0) && (
-            <ul className="store-listing-details">
-              {details.map((line) => (
-                <li key={line} className="store-listing-detail-pill">
-                  {line}
-                </li>
-              ))}
-              {addonEntries.length > 0 && (
-                <li>
-                  <button
-                    type="button"
-                    className="store-listing-detail-pill store-listing-detail-pill-button"
-                    onClick={() => setAddonModalOpen(true)}
-                  >
-                    Addons: {addonEntries.length}
-                  </button>
-                </li>
-              )}
-            </ul>
-          )}
+            {/* Mundo sits between name and price now (2026-07-18, moved
+                off its own line per explicit request) — icon sized to this
+                row's font via `em`, tinted per WORLD_ICON_COLORS (globe
+                icon replacing a plain dot, same day, follow-up request).
+                Color set on the wrapping span (not just the icon) so the
+                label text picks up the same per-world color via
+                `currentColor` — icon and text now read as one unit, both
+                colored, per explicit follow-up request the same day. */}
+            {worldLabel && (
+              <span
+                className="store-listing-world-inline"
+                style={{ color: WORLD_ICON_COLORS[worldValue] || 'currentColor' }}
+              >
+                <EarthIcon className="store-listing-world-icon" />
+                {worldLabel}
+              </span>
+            )}
 
-          {(priceReal != null || priceHd != null) && (
-            <p className="store-listing-price">
-              {priceReal != null && <span>R$ {priceReal}</span>}
-              {priceHd != null && <span>{priceHd} HD</span>}
-            </p>
-          )}
+            {compactPriceText && <span className="store-listing-price-compact">{compactPriceText}</span>}
+          </div>
+
+          {compactSummary && <p className="store-listing-compact-summary">{compactSummary}</p>}
         </div>
       </div>
 
-      <div className="store-listing-actions">
-        <div className="store-listing-actions-primary">
-          {isOwner ? (
-            <button
-              type="button"
-              className="landing-btn landing-btn-outline"
-              onClick={() => onStatusChange(listing, isSold ? 'ACTIVE' : 'SOLD')}
-            >
-              {isSold ? 'Reverter venda' : 'Vendido'}
-            </button>
-          ) : (
-            whatsappLink && (
-              <a
-                href={whatsappLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="landing-btn landing-btn-primary"
-              >
-                Conversar no WhatsApp
-              </a>
-            )
-          )}
-        </div>
-
-        {isOwner && (
+      {isOwner ? (
+        <div className="store-listing-owner-controls">
           <div className="store-listing-actions-secondary">
             <Link to={editHref} className="store-listing-action-btn" aria-label="Editar" title="Editar">
               <PencilIcon className="store-listing-action-icon" />
@@ -264,26 +366,96 @@ export function StoreListingCard({ listing, isOwner, slug, storeWhatsapp, onStat
               )}
             </button>
           </div>
-        )}
-      </div>
 
-      {addonEntries.length > 0 && (
-        <Modal open={addonModalOpen} onClose={() => setAddonModalOpen(false)} title={`Addons de ${name || 'Pokémon'}`}>
-          <div className="addon-modal-grid">
-            {addonEntries.map((entry) => {
-              const spriteUrl = resolveAddonLooktypeUrl(entry.CatalogItem, pokemonWikiTitle, isShinyPokemon);
-              return (
-                <div key={entry.addonCatalogItemId} className="addon-modal-item">
-                  <div className="store-listing-photo">
-                    {spriteUrl && <img src={spriteUrl} alt={entry.CatalogItem?.name} onError={hideBrokenImage} />}
-                  </div>
-                  <span className="addon-modal-item-name">{entry.CatalogItem?.name}</span>
-                </div>
-              );
-            })}
-          </div>
-        </Modal>
+          {/* Vendido/Reverter venda (2026-07-18) — sits right under the
+              icon row now (was pinned to the card's bottom-right corner,
+              user found that too far down/tucked in the corner). Same
+              column, right-aligned, normal flow instead of position:
+              absolute — moves and resizes naturally with the icon row
+              above it instead of needing its own fixed offset. */}
+          <button
+            type="button"
+            className="store-listing-status-btn"
+            onClick={() => onStatusChange(listing, isSold ? 'ACTIVE' : 'SOLD')}
+          >
+            {isSold ? 'Reverter venda' : 'Vendido'}
+          </button>
+        </div>
+      ) : (
+        // Compact card has room for the primary CTA (2026-07-18) — back on
+        // the card itself, not just inside the "ver anúncio completo"
+        // modal. Same wa.me link as before, just a smaller pill here.
+        // "Contato" label is icon-only below 860px (see CSS) — at narrow/
+        // single-column widths the full pill left too little room for the
+        // name (truncated to 1-2 chars, confirmed via screenshot); the
+        // `aria-label` keeps it accessible either way.
+        whatsappLink && (
+          <a
+            href={whatsappLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="store-listing-contact-btn"
+            aria-label="Contato"
+            title="Contato"
+          >
+            <WhatsAppIcon className="store-listing-contact-icon" />
+            <span className="store-listing-contact-label">Contato</span>
+          </a>
+        )
       )}
+
+      {/* Reorganized 2026-07-18: sectioned spec-sheet grid instead of one
+          flat wrapped bullet line — also now includes every field the
+          respective creation form can set (Pokébola/Mundo were previously
+          missing entirely, see buildPokemonModalFields above). */}
+      <Modal open={detailsModalOpen} onClose={() => setDetailsModalOpen(false)} title={displayName}>
+        {(priceReal != null || priceHd != null) && (
+          <p className="store-listing-price">
+            {priceReal != null && <span>R$ {priceReal}</span>}
+            {priceHd != null && <span>{formatHdCompact(priceHd)}</span>}
+          </p>
+        )}
+
+        {modalFields.length > 0 && (
+          <>
+            <p className="store-listing-modal-section-label">Detalhes</p>
+            <div className="store-listing-modal-grid">
+              {modalFields.map((field) => (
+                <div key={field.label} className="store-listing-modal-field">
+                  <span className="store-listing-modal-label">{field.label}</span>
+                  <span className="store-listing-modal-value">{field.value}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {kind === 'item' && raw.notes && <p className="store-listing-modal-notes">{raw.notes}</p>}
+
+        {addonEntries.length > 0 && (
+          <>
+            <p className="store-listing-modal-section-label">Addons</p>
+            <div className="addon-modal-grid">
+              {addonEntries.map((entry) => {
+                const spriteUrl = resolveAddonLooktypeUrl(entry.CatalogItem, pokemonWikiTitle, isShinyPokemon);
+                return (
+                  <div key={entry.addonCatalogItemId} className="addon-modal-item">
+                    <div className="store-listing-photo">
+                      {spriteUrl && <img src={spriteUrl} alt={entry.CatalogItem?.name} onError={hideBrokenImage} />}
+                    </div>
+                    <span className="addon-modal-item-name">{entry.CatalogItem?.name}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* Neither owner's Vendido nor visitor's WhatsApp CTA render here
+            anymore (2026-07-18) — both moved onto the compact card itself
+            (.store-listing-status-btn / .store-listing-contact-btn above),
+            so this modal no longer duplicates either action. */}
+      </Modal>
     </div>
   );
 }
