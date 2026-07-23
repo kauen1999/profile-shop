@@ -7,6 +7,29 @@ const { resolveItemTemplate } = require('./storeItemOptions');
 
 const VALID_GAME_WORLDS = ['BLUE', 'GREEN', 'RED', 'BLACK', 'PURPLE', 'SILVER', 'GOLD'];
 
+// Shared by POST / and PATCH /me — normalizes+validates the `worlds` array a
+// store registers itself under (StoreWorld, `@@unique([storeId, world])`).
+// Returns `{ worlds }` (deduped, only when the input differs) on success, or
+// `{ error }` on the first invalid value found. `undefined`/absent input is
+// treated as "no change" (returns `{ worlds: undefined }`), matching the
+// same "only touch what's present" convention as every other optional field
+// on these two routes — registering a world is optional, per the request
+// this was built from ("adicione... a opção de colocar o mundo").
+function normalizeWorlds(worlds) {
+  if (worlds === undefined) return { worlds: undefined };
+  if (!Array.isArray(worlds)) return { error: 'worlds precisa ser uma lista de mundos.' };
+
+  const deduped = [...new Set(worlds.map((w) => String(w).toUpperCase()))];
+  const invalid = deduped.find((w) => !VALID_GAME_WORLDS.includes(w));
+  if (invalid) {
+    return {
+      error: `"${invalid}" não é um mundo válido — precisa ser um dos valores: ${VALID_GAME_WORLDS.join(', ')}.`,
+    };
+  }
+
+  return { worlds: deduped };
+}
+
 // Mirrors prisma/schema.prisma's StoreListingStatus enum (added 2026-07-14
 // alongside the PATCH/DELETE routes below).
 const VALID_LISTING_STATUSES = ['ACTIVE', 'HIDDEN', 'SOLD'];
@@ -57,8 +80,8 @@ function slugify(name) {
     .replace(/^-+|-+$/g, '');
 }
 
-// There's no DB unique constraint on whatsapp/discord/telegram (see
-// prisma/schema.prisma's Store model) — this is an application-level
+// There's no DB unique constraint on whatsapp (see prisma/schema.prisma's
+// Store model) — this is an application-level
 // invariant, checked here instead. Prevents two stores from listing the
 // identical contact channel. `contacts` is a { fieldName: rawValue } map of
 // only the fields actually being set/changed; `excludeStoreId` omits the
@@ -92,13 +115,269 @@ router.get(
   '/me',
   requireAuth,
   asyncHandler(async (req, res) => {
-    const store = await prisma.store.findUnique({ where: { userId: req.currentUser.id } });
+    const store = await prisma.store.findUnique({
+      where: { userId: req.currentUser.id },
+      include: { StoreWorld: true },
+    });
 
     if (!store) {
       return res.status(404).json({ hasStore: false });
     }
 
     res.json(store);
+  })
+);
+
+// GET /stores/me/analytics (2026-07-21) — owner-only, aggregates the
+// StoreVisit/StoreListingView event logs plus StoreItem/StorePokemon into the
+// dashboard shape the frontend Analytics tab consumes. See CLAUDE.md's
+// "Analytics da loja" entry for the full data model.
+router.get(
+  '/me/analytics',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const store = await prisma.store.findUnique({ where: { userId: req.currentUser.id } });
+
+    if (!store) {
+      return res.status(404).json({ error: 'Este usuário ainda não possui uma loja.' });
+    }
+
+    const storeId = store.id;
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    // Performance (2026-07-22, reported slow/timing out) — this handler
+    // originally ran ~10 DB round-trips in sequence, several of them hitting
+    // the exact same "SOLD" rows 3 times over (once via `aggregate` for
+    // count+sum, once via `findMany` for the species/category breakdown,
+    // once more via `findMany` for the sales log). Against this project's
+    // Neon connection (documented elsewhere in CLAUDE.md as prone to
+    // cold-start latency), that many serial round-trips is exactly what
+    // shows up as "demora muito"/eventual fetch failure on the frontend.
+    // Fixed two ways: (1) every query below that doesn't depend on another
+    // query's result now fires in one `Promise.all` wave instead of
+    // sequentially; (2) the SOLD rows are fetched ONCE per table (no `take`
+    // limit, so counts/sums/breakdowns still reflect the true lifetime
+    // total) and count/sum/bySpecies/byCategory/salesLog are all derived
+    // from that same in-memory array — no repeat trips for the same rows.
+    // Only `viewedItems`/`viewedPokemon` genuinely depend on `topViewGroups`
+    // (need its ids first) and stay a second wave.
+    const [visitsRow, rawVisitsPerDay, activeItemsAgg, activePokemonAgg, soldItemsAll, soldPokemonAll, topViewGroups] =
+      await Promise.all([
+        // Calendar-boundary visit counts (today/week/month) + the rolling
+        // last-7-days count used only for the HOT ratio below, all in one
+        // query — date_trunc('week', ...) is ISO-week (starts Monday), NOT
+        // a rolling window, which is why `last7d` is computed separately
+        // from `week` in the same SELECT rather than reused: they answer
+        // different questions (calendar week-to-date vs. a fixed rolling
+        // window) even though both read the same table.
+        prisma.$queryRaw`
+          SELECT
+            COUNT(*) FILTER (WHERE "createdAt" >= date_trunc('day', NOW()))::int AS today,
+            COUNT(*) FILTER (WHERE "createdAt" >= date_trunc('week', NOW()))::int AS week,
+            COUNT(*) FILTER (WHERE "createdAt" >= date_trunc('month', NOW()))::int AS month,
+            COUNT(*) FILTER (WHERE "createdAt" >= ${sevenDaysAgo})::int AS last7d
+          FROM "StoreVisit" WHERE "storeId" = ${storeId}
+        `,
+        // Visits per day, last 30 calendar days — groupBy can't bucket by a
+        // truncated date, so this uses the same $queryRaw escape hatch
+        // already used elsewhere in this project (e.g.
+        // src/routes/storePokemonOptions.js's Cherish Ball union query).
+        // Zero-filled below, after this wave resolves.
+        prisma.$queryRaw`
+          SELECT date_trunc('day', "createdAt") AS day, COUNT(*)::int AS count
+          FROM "StoreVisit"
+          WHERE "storeId" = ${storeId} AND "createdAt" >= NOW() - INTERVAL '30 days'
+          GROUP BY day
+        `,
+        // totalAdvertised scopes to ACTIVE listings only, paired with an
+        // estimated-revenue figure — only needs count+sum, so `aggregate`
+        // (not a row fetch) is the right call here, unlike the SOLD case
+        // below which also needs per-row breakdown data.
+        prisma.storeItem.aggregate({
+          where: { storeId, status: 'ACTIVE' },
+          _sum: { priceReal: true, priceHd: true },
+          _count: true,
+        }),
+        prisma.storePokemon.aggregate({
+          where: { storeId, status: 'ACTIVE' },
+          _sum: { priceReal: true, priceHd: true },
+          _count: true,
+        }),
+        // SOLD rows, fetched once (no `take`) — feeds sold.item/pokemon
+        // counts, revenue sums, bySpecies/byCategory, AND salesLog, all
+        // derived below without any further query against these rows.
+        prisma.storeItem.findMany({
+          where: { storeId, status: 'SOLD' },
+          include: { CatalogItem: { select: { name: true, category: true } } },
+        }),
+        prisma.storePokemon.findMany({
+          where: { storeId, status: 'SOLD' },
+          include: {
+            CatalogItem_StorePokemon_pokemonCatalogItemIdToCatalogItem: { select: { name: true } },
+          },
+        }),
+        // Top 10 most-viewed listings, scoped to a rolling last-7-days
+        // window (kept consistent with the HOT badge, computed over the
+        // same window). Over-fetches 20 groups since some may be orphaned
+        // (the referenced StoreItem/StorePokemon was later deleted — no
+        // FK/cascade at the listing level for StoreListingView, only at the
+        // Store level, see prisma/schema.prisma's comment on the model).
+        prisma.storeListingView.groupBy({
+          by: ['kind', 'listingId'],
+          where: { storeId, createdAt: { gte: sevenDaysAgo } },
+          _count: { listingId: true },
+          orderBy: { _count: { listingId: 'desc' } },
+          take: 20,
+        }),
+      ]);
+
+    const visits = { today: visitsRow[0].today, week: visitsRow[0].week, month: visitsRow[0].month };
+    const visitsLast7Days = visitsRow[0].last7d;
+
+    const countByDay = new Map(
+      rawVisitsPerDay.map((row) => [row.day.toISOString().slice(0, 10), row.count])
+    );
+    const visitsPerDay = [];
+    for (let i = 29; i >= 0; i -= 1) {
+      const d = new Date();
+      d.setUTCHours(0, 0, 0, 0);
+      d.setUTCDate(d.getUTCDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      visitsPerDay.push({ date: key, count: countByDay.get(key) || 0 });
+    }
+
+    const bySpeciesMap = new Map();
+    for (const row of soldPokemonAll) {
+      const name = row.CatalogItem_StorePokemon_pokemonCatalogItemIdToCatalogItem?.name;
+      if (!name) continue;
+      bySpeciesMap.set(name, (bySpeciesMap.get(name) || 0) + 1);
+    }
+    const bySpecies = [...bySpeciesMap.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const byCategoryMap = new Map();
+    for (const row of soldItemsAll) {
+      const category = row.CatalogItem?.category;
+      if (!category) continue;
+      byCategoryMap.set(category, (byCategoryMap.get(category) || 0) + 1);
+    }
+    const byCategory = [...byCategoryMap.entries()]
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const itemIds = topViewGroups.filter((g) => g.kind === 'ITEM').map((g) => g.listingId);
+    const pokemonIds = topViewGroups.filter((g) => g.kind === 'POKEMON').map((g) => g.listingId);
+
+    const [viewedItems, viewedPokemon] = await Promise.all([
+      itemIds.length
+        ? prisma.storeItem.findMany({
+            where: { id: { in: itemIds }, storeId },
+            include: { CatalogItem: true },
+          })
+        : [],
+      pokemonIds.length
+        ? prisma.storePokemon.findMany({
+            where: { id: { in: pokemonIds }, storeId },
+            include: {
+              CatalogItem_StorePokemon_pokemonCatalogItemIdToCatalogItem: true,
+            },
+          })
+        : [],
+    ]);
+
+    const itemsById = new Map(viewedItems.map((row) => [row.id, row]));
+    const pokemonById = new Map(viewedPokemon.map((row) => [row.id, row]));
+
+    const topListings = topViewGroups
+      .map((group) => {
+        const row =
+          group.kind === 'ITEM' ? itemsById.get(group.listingId) : pokemonById.get(group.listingId);
+        if (!row) return null; // orphaned view — listing no longer exists, silently dropped
+
+        const catalogItem =
+          group.kind === 'ITEM'
+            ? row.CatalogItem
+            : row.CatalogItem_StorePokemon_pokemonCatalogItemIdToCatalogItem;
+
+        const viewCount = group._count.listingId;
+        // Guard against divide-by-zero explicitly — a store with 0 visits in
+        // the last 7 days must never mark anything HOT (never NaN/Infinity).
+        const hotRatio = visitsLast7Days > 0 ? viewCount / visitsLast7Days : 0;
+
+        return {
+          kind: group.kind,
+          id: group.listingId,
+          name: catalogItem?.name || null,
+          imageUrl: catalogItem?.imageUrl || null,
+          viewCount,
+          isHot: hotRatio >= 0.25,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.viewCount - a.viewCount)
+      .slice(0, 10);
+
+    // Sales log — same soldItemsAll/soldPokemonAll rows already fetched
+    // above (no separate query), capped at 50 total (a defensive cap, not a
+    // hard product requirement) after sorting by soldAt desc. soldAt can be
+    // null for a row that was somehow marked SOLD before this field existed
+    // (pre-existing data from before this refinement) — those sort last,
+    // never crash the sort.
+    const salesLog = [
+      ...soldItemsAll.map((row) => ({
+        kind: 'ITEM',
+        id: row.id,
+        name: row.CatalogItem?.name || null,
+        priceReal: row.priceReal,
+        priceHd: row.priceHd,
+        soldAt: row.soldAt,
+      })),
+      ...soldPokemonAll.map((row) => ({
+        kind: 'POKEMON',
+        id: row.id,
+        name: row.CatalogItem_StorePokemon_pokemonCatalogItemIdToCatalogItem?.name || null,
+        priceReal: row.priceReal,
+        priceHd: row.priceHd,
+        soldAt: row.soldAt,
+      })),
+    ]
+      .sort((a, b) => {
+        if (!a.soldAt && !b.soldAt) return 0;
+        if (!a.soldAt) return 1; // nulls last
+        if (!b.soldAt) return -1;
+        return new Date(b.soldAt) - new Date(a.soldAt);
+      })
+      .slice(0, 50);
+
+    const soldRevenueReal = soldItemsAll.reduce((sum, row) => sum + (row.priceReal || 0), 0) +
+      soldPokemonAll.reduce((sum, row) => sum + (row.priceReal || 0), 0);
+    const soldRevenueHd = soldItemsAll.reduce((sum, row) => sum + (row.priceHd || 0), 0) +
+      soldPokemonAll.reduce((sum, row) => sum + (row.priceHd || 0), 0);
+
+    res.json({
+      visits,
+      visitsPerDay,
+      totalAdvertised: {
+        item: activeItemsAgg._count,
+        pokemon: activePokemonAgg._count,
+        combined: activeItemsAgg._count + activePokemonAgg._count,
+        estimatedRevenue: {
+          real: (activeItemsAgg._sum.priceReal || 0) + (activePokemonAgg._sum.priceReal || 0),
+          hd: (activeItemsAgg._sum.priceHd || 0) + (activePokemonAgg._sum.priceHd || 0),
+        },
+      },
+      sold: {
+        item: soldItemsAll.length,
+        pokemon: soldPokemonAll.length,
+        combined: soldItemsAll.length + soldPokemonAll.length,
+        revenue: { real: soldRevenueReal, hd: soldRevenueHd },
+        bySpecies,
+        byCategory,
+      },
+      topListings,
+      salesLog,
+    });
   })
 );
 
@@ -114,10 +393,15 @@ router.post(
       return res.status(409).json({ error: 'Este usuário já possui uma loja.' });
     }
 
-    const { name, description, gameNickname, whatsapp, discord, telegram } = req.body || {};
+    const { name, description, gameNickname, whatsapp, worlds } = req.body || {};
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'name é obrigatório.' });
+    }
+
+    const { worlds: normalizedWorlds, error: worldsError } = normalizeWorlds(worlds);
+    if (worldsError) {
+      return res.status(400).json({ error: worldsError });
     }
 
     const baseSlug = slugify(name);
@@ -149,7 +433,7 @@ router.post(
     // /stores/me, applied here retroactively for consistency — see
     // findConflictingContactField above). No existing store to exclude yet,
     // hence no excludeStoreId argument.
-    const conflictField = await findConflictingContactField({ whatsapp, discord, telegram });
+    const conflictField = await findConflictingContactField({ whatsapp });
     if (conflictField) {
       return res
         .status(409)
@@ -164,10 +448,12 @@ router.post(
         description: (description && String(description).trim()) || null,
         gameNickname: (gameNickname && String(gameNickname).trim()) || null,
         whatsapp: (whatsapp && String(whatsapp).trim()) || null,
-        discord: (discord && String(discord).trim()) || null,
-        telegram: (telegram && String(telegram).trim()) || null,
         updatedAt: new Date(),
+        ...(normalizedWorlds?.length && {
+          StoreWorld: { create: normalizedWorlds.map((world) => ({ world })) },
+        }),
       },
+      include: { StoreWorld: true },
     });
 
     res.status(201).json(store);
@@ -186,8 +472,18 @@ router.patch(
         .json({ error: 'Este usuário ainda não possui uma loja — nada para editar.' });
     }
 
-    const { name, slug, description, gameNickname, whatsapp, discord, telegram } = req.body || {};
+    const { name, slug, description, gameNickname, whatsapp, worlds } = req.body || {};
     const data = { updatedAt: new Date() };
+
+    const { worlds: normalizedWorlds, error: worldsError } = normalizeWorlds(worlds);
+    if (worldsError) {
+      return res.status(400).json({ error: worldsError });
+    }
+    if (normalizedWorlds !== undefined) {
+      // Full-set replace, not diff/merge — same pattern already used for
+      // StorePokemonAddon/StorePokemonSticker on PATCH /me/pokemon/:id below.
+      data.StoreWorld = { deleteMany: {}, create: normalizedWorlds.map((world) => ({ world })) };
+    }
 
     if (name !== undefined) {
       if (typeof name !== 'string' || !name.trim()) {
@@ -242,7 +538,7 @@ router.patch(
     // changing (re-submitting the store's own current value is a no-op, and
     // would otherwise be excluded by excludeStoreId anyway — the "differs"
     // guard just avoids a redundant query per unchanged field).
-    const contactFields = { whatsapp, discord, telegram };
+    const contactFields = { whatsapp };
     const changedContacts = {};
 
     for (const [field, rawValue] of Object.entries(contactFields)) {
@@ -268,7 +564,11 @@ router.patch(
       }
     }
 
-    const updated = await prisma.store.update({ where: { id: store.id }, data });
+    const updated = await prisma.store.update({
+      where: { id: store.id },
+      data,
+      include: { StoreWorld: true },
+    });
 
     res.json(updated);
   })
@@ -282,7 +582,10 @@ router.post(
   '/me/pokemon',
   requireAuth,
   asyncHandler(async (req, res) => {
-    const store = await prisma.store.findUnique({ where: { userId: req.currentUser.id } });
+    const store = await prisma.store.findUnique({
+      where: { userId: req.currentUser.id },
+      include: { StoreWorld: true },
+    });
 
     if (!store) {
       return res
@@ -296,6 +599,7 @@ router.post(
       level,
       gender,
       nature,
+      world,
       nickname,
       addonCatalogItemIds,
       equippedAddonCatalogItemId,
@@ -310,11 +614,26 @@ router.post(
       priceHd,
     } = req.body || {};
 
-    const requiredFields = { pokeballCatalogItemId, pokemonCatalogItemId, level, gender, nature };
+    const requiredFields = { pokeballCatalogItemId, pokemonCatalogItemId, level, gender, nature, world };
     for (const [field, value] of Object.entries(requiredFields)) {
       if (value === undefined || value === null || value === '') {
         return res.status(400).json({ error: `${field} é obrigatório.` });
       }
+    }
+
+    // world is validated against the STORE's own registered worlds
+    // (StoreWorld), not just the bare GameWorld enum — a listing can't claim
+    // a world its own store never registered under "Mundo" in settings.
+    const storeWorlds = store.StoreWorld.map((w) => w.world);
+    if (storeWorlds.length === 0) {
+      return res.status(400).json({
+        error: 'Cadastre ao menos um mundo nas configurações da loja antes de anunciar um Pokémon.',
+      });
+    }
+    if (!storeWorlds.includes(world)) {
+      return res.status(400).json({
+        error: `world inválido — precisa ser um dos mundos cadastrados pela loja: ${storeWorlds.join(', ')}.`,
+      });
     }
 
     // Shiny toggle removed (2026-07-14) — addonCount replaced by
@@ -340,8 +659,9 @@ router.post(
     }
 
     let extraMovesText = null;
+    let normalizedExtraMoveCount = null;
     if (extraMoveCount !== undefined && extraMoveCount !== null) {
-      const normalizedExtraMoveCount = Number(extraMoveCount);
+      normalizedExtraMoveCount = Number(extraMoveCount);
       if (normalizedExtraMoveCount < 0) {
         return res.status(400).json({ error: 'extraMoveCount não pode ser negativo.' });
       }
@@ -359,8 +679,9 @@ router.post(
     }
 
     let presetSlotsText = null;
+    let normalizedPresetSlotCount = null;
     if (presetSlotCount !== undefined && presetSlotCount !== null) {
-      const normalizedPresetSlotCount = Number(presetSlotCount);
+      normalizedPresetSlotCount = Number(presetSlotCount);
       if (normalizedPresetSlotCount < 0 || normalizedPresetSlotCount > 3) {
         return res.status(400).json({ error: 'presetSlotCount precisa estar entre 0 e 3.' });
       }
@@ -412,15 +733,17 @@ router.post(
         megaStoneCatalogItemId !== undefined && megaStoneCatalogItemId !== null
           ? Number(megaStoneCatalogItemId)
           : null,
+      // Bug fix (2026-07-18): this create only ever wrote the *derived*
+      // display strings (extraMovesText/presetSlotsText) — the actual
+      // numeric extraMoveCount/presetSlotCount columns, which is what the
+      // edit-form prefill and the storefront card/modal both read, were
+      // never assigned here and stayed permanently null regardless of what
+      // the form submitted.
+      extraMoveCount: normalizedExtraMoveCount > 0 ? normalizedExtraMoveCount : null,
       extraMovesText,
+      presetSlotCount: normalizedPresetSlotCount > 0 ? normalizedPresetSlotCount : null,
       presetSlotsText,
-      // TODO: hardcoded placeholder — this form has no world/server
-      // selection UI yet (deliberate, confirmed scope decision, see
-      // CLAUDE.md's "Setup de loja pós-login e edição" / Pokémon-listing
-      // section). NOT real data — do not build filtering/business logic
-      // that assumes this reflects which world the Pokémon actually lives
-      // in until a real UI field replaces it.
-      world: 'BLUE',
+      world,
       priceReal: hasPriceReal ? Number(priceReal) : null,
       priceHd: hasPriceHd ? Number(priceHd) : null,
       updatedAt: new Date(),
@@ -586,6 +909,11 @@ router.patch(
         });
       }
       data.status = status;
+      // soldAt stamps the exact moment a listing transitions to SOLD (used by
+      // the Analytics dashboard's sales log) — cleared if the status is moved
+      // back away from SOLD (e.g. "Reverter venda"). Only touched when
+      // `status` is present in the request body at all.
+      data.soldAt = status === 'SOLD' ? new Date() : null;
     }
 
     if (serialNumber !== undefined) {
@@ -693,7 +1021,10 @@ router.patch(
   '/me/pokemon/:id',
   requireAuth,
   asyncHandler(async (req, res) => {
-    const store = await prisma.store.findUnique({ where: { userId: req.currentUser.id } });
+    const store = await prisma.store.findUnique({
+      where: { userId: req.currentUser.id },
+      include: { StoreWorld: true },
+    });
     const id = Number(req.params.id);
 
     const existing = Number.isInteger(id)
@@ -713,6 +1044,7 @@ router.patch(
       level,
       gender,
       nature,
+      world,
       nickname,
       addonCatalogItemIds,
       equippedAddonCatalogItemId,
@@ -737,6 +1069,11 @@ router.patch(
         });
       }
       data.status = status;
+      // soldAt stamps the exact moment a listing transitions to SOLD (used by
+      // the Analytics dashboard's sales log) — cleared if the status is moved
+      // back away from SOLD (e.g. "Reverter venda"). Only touched when
+      // `status` is present in the request body at all.
+      data.soldAt = status === 'SOLD' ? new Date() : null;
     }
 
     // These are required-on-create fields (see POST /me/pokemon above) —
@@ -744,11 +1081,22 @@ router.patch(
     // if present, clearing one to blank is rejected the same way POST
     // rejects a missing value for them — unlike Items' genuinely-optional
     // fields, these have no meaningful "cleared" state.
-    const requiredIfPresent = { pokeballCatalogItemId, pokemonCatalogItemId, level, gender, nature };
+    const requiredIfPresent = { pokeballCatalogItemId, pokemonCatalogItemId, level, gender, nature, world };
     for (const [field, value] of Object.entries(requiredIfPresent)) {
       if (value !== undefined && (value === null || value === '')) {
         return res.status(400).json({ error: `${field} não pode ser vazio.` });
       }
+    }
+
+    if (world !== undefined) {
+      // Same store-registered-worlds check as POST /me/pokemon above.
+      const storeWorlds = store.StoreWorld.map((w) => w.world);
+      if (!storeWorlds.includes(world)) {
+        return res.status(400).json({
+          error: `world inválido — precisa ser um dos mundos cadastrados pela loja: ${storeWorlds.join(', ')}.`,
+        });
+      }
+      data.world = world;
     }
 
     if (pokeballCatalogItemId !== undefined) data.pokeballCatalogItemId = Number(pokeballCatalogItemId);
@@ -805,8 +1153,15 @@ router.patch(
         megaStoneCatalogItemId !== null ? Number(megaStoneCatalogItemId) : null;
     }
 
+    // Bug fix (2026-07-18): same gap as POST /me/pokemon above — this block
+    // only ever wrote the derived extraMovesText, never the numeric
+    // extraMoveCount column the edit-form prefill and the storefront
+    // card/modal actually read, so editing a listing to add/change extra
+    // moves silently had no visible effect and the field always came back
+    // empty when reopening the form.
     if (extraMoveCount !== undefined) {
       if (extraMoveCount === null || extraMoveCount === '') {
+        data.extraMoveCount = null;
         data.extraMovesText = null;
       } else {
         const normalizedExtraMoveCount = Number(extraMoveCount);
@@ -825,18 +1180,21 @@ router.patch(
             error: `extraMoveCount excede o máximo permitido para este Pokémon (${maxExtraMoves}).`,
           });
         }
+        data.extraMoveCount = normalizedExtraMoveCount > 0 ? normalizedExtraMoveCount : null;
         data.extraMovesText = normalizedExtraMoveCount > 0 ? `+${normalizedExtraMoveCount}` : null;
       }
     }
 
     if (presetSlotCount !== undefined) {
       if (presetSlotCount === null || presetSlotCount === '') {
+        data.presetSlotCount = null;
         data.presetSlotsText = null;
       } else {
         const normalizedPresetSlotCount = Number(presetSlotCount);
         if (normalizedPresetSlotCount < 0 || normalizedPresetSlotCount > 3) {
           return res.status(400).json({ error: 'presetSlotCount precisa estar entre 0 e 3.' });
         }
+        data.presetSlotCount = normalizedPresetSlotCount > 0 ? normalizedPresetSlotCount : null;
         data.presetSlotsText = normalizedPresetSlotCount > 0 ? String(normalizedPresetSlotCount) : null;
       }
     }

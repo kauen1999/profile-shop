@@ -114,22 +114,24 @@ model ReplaySnapshot {
 }
 
 model Store {
-  id           Int            @id @default(autoincrement())
-  userId       Int            @unique
-  name         String
-  slug         String         @unique
-  description  String?
-  discord      String?
-  whatsapp     String?
-  telegram     String?
-  gameNickname String?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime
-  hdRealPerK   Float?
-  User         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  StoreItem    StoreItem[]
-  StorePokemon StorePokemon[]
-  StoreWorld   StoreWorld[]
+  id               Int                @id @default(autoincrement())
+  userId           Int                @unique
+  name             String
+  slug             String             @unique
+  description      String?
+  discord          String?
+  whatsapp         String?
+  telegram         String?
+  gameNickname     String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime
+  hdRealPerK       Float?
+  User             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  StoreItem        StoreItem[]
+  StorePokemon     StorePokemon[]
+  StoreWorld       StoreWorld[]
+  StoreVisit       StoreVisit[]
+  StoreListingView StoreListingView[]
 }
 
 model StoreItem {
@@ -146,6 +148,7 @@ model StoreItem {
   acquiredAt    String?
   originWorld   GameWorld?
   status        StoreListingStatus  @default(ACTIVE)
+  soldAt        DateTime?
   CatalogItem   CatalogItem         @relation(fields: [catalogItemId], references: [wikiPageId])
   Store         Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
@@ -179,6 +182,7 @@ model StorePokemon {
   megaStoneCatalogItemId                                           Int?
   equippedAddonCatalogItemId                                       Int?
   status                                                            StoreListingStatus    @default(ACTIVE)
+  soldAt                                                            DateTime?
   CatalogItem_StorePokemon_equippedAddonCatalogItemIdToCatalogItem CatalogItem?          @relation("StorePokemon_equippedAddonCatalogItemIdToCatalogItem", fields: [equippedAddonCatalogItemId], references: [wikiPageId])
   CatalogItem_StorePokemon_heldItemCatalogItemIdToCatalogItem      CatalogItem?          @relation("StorePokemon_heldItemCatalogItemIdToCatalogItem", fields: [heldItemCatalogItemId], references: [wikiPageId])
   CatalogItem_StorePokemon_megaStoneCatalogItemIdToCatalogItem     CatalogItem?          @relation("StorePokemon_megaStoneCatalogItemIdToCatalogItem", fields: [megaStoneCatalogItemId], references: [wikiPageId])
@@ -223,6 +227,42 @@ model StoreWorld {
 
   @@unique([storeId, world])
   @@index([storeId])
+}
+
+enum StoreListingKind {
+  ITEM
+  POKEMON
+}
+
+model StoreVisit {
+  id        Int      @id @default(autoincrement())
+  storeId   Int
+  createdAt DateTime @default(now())
+  Store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([storeId, createdAt])
+}
+
+// `listingId` is a plain Int, deliberately NOT a Prisma @relation — it points
+// to either StoreItem.id or StorePokemon.id depending on `kind`, and Prisma
+// can't express a relation whose target model varies by a sibling column.
+// Known, accepted consequence: if the referenced listing is later deleted,
+// this row becomes orphaned (no cascade at the listing level, only at the
+// Store level below) — GET /stores/me/analytics must always re-resolve
+// listingId against the live StoreItem/StorePokemon table and silently drop
+// any row that no longer resolves, never surfacing a nameless "ghost" entry.
+model StoreListingView {
+  id        Int              @id @default(autoincrement())
+  storeId   Int
+  kind      StoreListingKind
+  listingId Int
+  createdAt DateTime         @default(now())
+  Store     Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([storeId, createdAt])
+  @@index([storeId, kind, listingId])
 }
 
 model SyncExecution {
