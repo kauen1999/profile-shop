@@ -69,6 +69,107 @@ para não deixar essa falha transitória derrubar o processo Node inteiro (já
 aconteceu antes dessa correção). Se adicionar uma rota nova, sempre envolva com
 `asyncHandler(async (req, res) => {...})`.
 
+## Vulnerabilidades de dependência + rede de testes de negócio (2026-07-22)
+
+**8 vulnerabilidades corrigidas via `npm overrides`, sem tocar
+`firebase-admin`**: `npm audit` mostrava 8 vulnerabilidades moderadas, todas
+com a mesma causa raiz — uma versão antiga de `uuid` (< 11.1.1) puxada por
+duas cadeias transitivas dentro do `firebase-admin`:
+`@google-cloud/firestore` → `google-gax` → `uuid`/`retry-request`, e
+`@google-cloud/storage` → `teeny-request` → `uuid`. Este projeto usa
+`firebase-admin` só pra `admin.credential.cert()` +
+`admin.auth().verifyIdToken()` (`src/firebaseAdmin.js`) — nunca toca
+Firestore nem Cloud Storage, então as duas cadeias inteiras carregam
+funcionalidade não utilizada com uma dependência vulnerável.
+**Testado em isolamento antes de aplicar** (diretório de scratch): atualizar
+`firebase-admin` pra `14.2.0` **não resolve** (`@google-cloud/storage@7.21.0`
+continua puxando `uuid@9.0.1`, 6 vulnerabilidades permanecem); adicionar
+`"overrides": { "uuid": "^11.1.1" }` **mantendo `firebase-admin` na versão já
+fixada `^13.10.0`** resolve as 8 por completo (`npm audit` → 0). Aplicado no
+`package.json` raiz, `npm install` rodado, `package-lock.json` regenerado.
+Verificado: `npm ls uuid` → só `11.1.1` na árvore inteira (as duas cadeias);
+backend reiniciado, `GET /health` limpo; `POST /auth/google` com token
+inválido continua devolvendo `401` limpo (mesma superfície de Firebase Admin
+usada hoje, nenhuma mudança de comportamento).
+
+**Rede de testes automatizada para `src/routes/stores.js`** — motivado por
+um risco real já materializado nesta sessão: o bug de
+`extraMoveCount`/`presetSlotCount` nunca persistidos (só descoberto por
+reclamação de usuário, nunca por teste) é exatamente a classe de regressão
+que esta rede agora cobre. Novo `test/storeRoutes.test.js`, 5 casos, todos
+autocontidos (criam seu próprio `User`/`Store`/`CatalogItem` com
+`wikiPageId` sintético na faixa `999_600_000+` — fora de qualquer faixa já
+documentada neste arquivo e do id fixo usado por `deduplication.test.js` —
+e apagam tudo num `finally`, nunca dependem de dado acumulado):
+1. Isolamento de posse — `PATCH`/`DELETE` de item/Pokémon contra a loja de
+   outro dono sempre `404`, e a linha do dono real sobrevive intocada.
+2. Transição de status ⇄ `soldAt` — marcar `SOLD` grava timestamp real,
+   reverter pra `ACTIVE` limpa pra `null` (item e Pokémon).
+3. Validação de preço — `POST /me/items` sem preço, com `0`, ou negativo →
+   `400`; positivo → `201`.
+4. Validação de Mundo — `world` fora dos `StoreWorld` cadastrados pela loja
+   → `400` (inclusive loja sem nenhum mundo cadastrado); dentro → `201`.
+5. `extraMoveCount`/`presetSlotCount` — persistidos como número (não só o
+   texto derivado) na criação e na edição; valor acima do cap real da
+   espécie → `400` nos dois. Usa a mesma falha em cascata documentada em
+   `computeExtraMovesCap` (`src/routes/storePokemonOptions.js`) a favor:
+   como o `wikiPageId` sintético nunca bate em `data/wiki-crawl/index.json`,
+   o cap sempre cai no fallback `maxExtraMoves: 10` — determinístico em
+   qualquer ambiente, inclusive numa CI onde `data/wiki-crawl/` (gitignored)
+   nem existe.
+
+**Técnica de invocação** (reusa a mesma já documentada nesta sessão pra
+testar rota protegida por `requireAuth` sem token Firebase real — nunca
+precisou de biblioteca de mock nova): localiza o handler final na pilha do
+próprio router (`router.stack`, pulando `requireAuth`) e invoca com um
+`req`/`res`/`next` fake, `req.currentUser` setado direto pra um `User` real
+do banco. Cuidado reaplicado: `asyncHandler` não retorna a Promise interna
+— a invocação envolve numa `new Promise` que resolve via `res.json()` e
+rejeita via um `next(err)` de verdade.
+
+**Verificado que os testes realmente pegam regressão, não só passam à
+toa**: sabotagem temporária de `data.soldAt = status === 'SOLD' ? new
+Date() : null` (comentada) fez o teste 2 falhar exatamente como esperado
+(`'item soldAt must be set after marking SOLD'`); revertido, `node -c` +
+suíte inteira voltando a verde. Rodado contra o Neon real de dev (única
+opção neste ambiente — sem Docker/Postgres local disponível pra simular o
+container efêmero da CI) — confirmado sem nenhum resíduo depois (`0`
+usuários/itens de catálogo com o namespace de teste, checado por query
+direta).
+
+**Achado preciso sobre os 3 testes de banco já existentes, que motivou a
+descoberta acima**: `deduplication.test.js` é autocontido (cria/apaga sua
+própria linha de fixture) — **portável pra qualquer Postgres vazio**,
+incluindo um container efêmero; `dailyBossAccess.test.js` é um **canário de
+dado de produção** (verifica que uma categoria apagada em 2026-07-15
+continua com 0 linhas no banco real) — rodar contra um banco vazio seria um
+"passa" sem propósito, não é portável nem faz sentido tentar;
+`syncIdempotency.test.js` roda um script de sync real que lê de
+`data/wiki-crawl/` (gitignored, não existe num checkout de CI) — bloqueado
+por ausência de dado, não pelo banco. Só o primeiro + o `storeRoutes.test.js`
+novo entram na CI; os outros 2 continuam manuais, agora por motivo
+documentado com precisão (não só "flakiness" genérico).
+
+**CI (`.github/workflows/ci.yml`)**: novo job `test-db` — sobe um
+`postgres:16` efêmero via `services:` do GitHub Actions (nunca o Neon real,
+sem secret novo — a URL de conexão é sempre a mesma, local ao runner),
+`npx prisma db push --skip-generate` cria o schema do zero, depois `node
+--test test/deduplication.test.js test/storeRoutes.test.js`. Jobs
+`backend`/`frontend` já existentes intocados. YAML validado
+sintaticamente (`yaml.safe_load`) — **não verificado ainda rodando de
+verdade no GitHub** (esta sessão não tem Docker/Postgres local pra simular
+o job completo, e abrir um PR de teste exigiria commitar/empurrar pro
+remoto, fora do escopo de uma mudança sem pedido explícito do usuário para
+esse passo específico) — a lógica em si (mesmos comandos, mesmos 2
+arquivos de teste) já roda limpa localmente contra um Postgres real
+(Neon), só a etapa "container efêmero espec[í]fico do Actions" fica
+pendente de confirmação na primeira vez que este workflow rodar de
+verdade. **Branch protection ainda não foi atualizada** pra exigir o
+check `test-db` — deliberadamente adiado até essa primeira execução real
+confirmar verde (adicionar um check obrigatório que nunca passou
+travaria todo merge futuro, incluindo do próprio dono, já que
+`enforce_admins: true`).
+
 ## O banco: CatalogItem é o hub
 
 Schema em `prisma/schema.prisma`. **Prisma fixado em 6.x, não atualizar para 7.x** —

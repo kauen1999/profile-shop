@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+jobs:
+  backend:
+    name: Backend (unit tests, no DB)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # postinstall runs `prisma generate`, which only needs the schema file
+      # (DATABASE_URL is not required to generate the client) — no DB
+      # connection needed for this job.
+      - name: Install backend dependencies
+        run: npm ci
+
+      # Deliberately NOT `npm test` — that runs every file in test/, and 2 of
+      # them (syncIdempotency, dailyBossAccess) can't run here for reasons
+      # unrelated to CI setup: syncIdempotency runs a real sync script that
+      # reads data/wiki-crawl/, which is gitignored and doesn't exist in a
+      # checkout; dailyBossAccess is a production-data canary (asserts a
+      # category stays empty in the *real, accumulated* catalog) that would
+      # trivially pass against any empty database, giving false confidence.
+      # Both stay manual/local-only — that's not a CI gap to close, it's
+      # what they're actually for. Only the 2 DB-independent files run here.
+      - name: Run DB-independent unit tests
+        run: node --test test/categoryClassifier.test.js test/subcategories.test.js
+
+  test-db:
+    name: Backend (integration tests, ephemeral DB)
+    runs-on: ubuntu-latest
+    # A disposable Postgres, alive only for this job — never the real Neon
+    # database. No secret needed: the connection string below is always the
+    # same fixed value, local to this runner.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # storeRoutes.test.js requires src/routes/stores.js, which transitively
+      # requires src/authMiddleware.js -> src/firebaseAdmin.js — that module
+      # throws at require-time (before any test even runs) if neither
+      # FIREBASE_SERVICE_ACCOUNT_JSON nor FIREBASE_SERVICE_ACCOUNT_PATH is
+      # set. This is a throwaway, non-functional RSA keypair (generated with
+      # `openssl genrsa`, never used to sign anything real) — it exists only
+      # to satisfy admin.credential.cert()'s structural validation at module
+      # load. It is never used to actually authenticate: every test in this
+      # suite bypasses requireAuth entirely (see storeRoutes.test.js's own
+      # comment) and never calls verifyIdToken. Not a secret — safe to check
+      # into a public workflow file.
+      FIREBASE_SERVICE_ACCOUNT_JSON: '{"type": "service_account", "project_id": "fake-project", "private_key_id": "fakekeyid", "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCs1XIPCVzwl7Bl\npEfBjPU8jJb6SskoAAZ84ssy854wI+ghpbtFmhJZzx6libJQODU/X/YgccWrk43y\nV9YXQVsKqJx/CDOV9iFeP7YNekMiC6KwYswKwfd2crH+CNUcbNX/G/3CJzkdlz7Y\nqtDH/S7v2mNF2G4K4rf/330Ig3/n7BhWARg55pGPU0zH3rZtGs9N3rTJB1bDhghI\naFdcyWKrIvQKLz6K9hW4iEHVdQPreSo6sn1ASsfsIjVJNVhNRef+bsrPl7eVHSaf\n/5hc+vgVYFMXoGi+2C0WZ2ZVGcUOvOsr94Do+g0vfIZZYDhFUiSjjllFPu7OCvBD\nEYuVgl6jAgMBAAECggEALhXAExhZCuI3q/KRG5/9aEbInza/yoWvNS+4JP7myEla\nxVYOyHFbwUzEDDnaLR+/uwVYeLA9mBGBQQSA1rSblQz+pbTHJI57uUjdv1xBeFuH\n5uaBJ8Euvgu5QFaUlL7ElQCeul2BEk3Y+ScbAqiVEmm2HNKoDQkFLRonmdSOj4Vp\ncwFoUhraZSIEWuYRbVH+LqwOfB/oNtHminPcT7+I1er7es4mkf8LSxQR5yczO3d5\ncCPvglolXIbytxiCUeLNyYWo7yLqZMLkUqhqCyHRU3AWcf9TfxUaSVUSKMg7Tj7b\nO21lzUhsgV6ULUnefKSN5SaKUY6i0BLbTx19OuJj4QKBgQDbx1+kfc289+7yGjcE\nPrSs7M8H3gvA7u3fyW2yBmGN0QPREzfGvKVUl62w7dxJzXwEByfMhhPsVcevvQE0\nvR+9A50umGRcFKXxpEryLhijaiRS9f/XCYn+SsVWXmUv7ZBWChJloB44A92QMiUQ\ntDonu63jO4yWx86+KwlwA8l8MwKBgQDJUW1ai3VGro+9J0xdw+BVQwL41/ZDNhXJ\neWRJbqrb6A5T6WvaTpeUm1F57lV3LH8Et91+k/Rw7dm7/8yxVcxfCg/3aWgaPjdo\nO9hTNwvAuEfxCoc/Yv7osPN6IXno9jCtasgY4wMYsWYgzMUNt7HMvhcNiqRoIN9t\n7/9fHNMj0QKBgDpfA3nup7vupZnLeJ06AkaDRqEySjDdxHPRTb8gjrxZrQfUcNXp\nuId1GX6KTh2T48I2HE3ntlbomXaFXlKhgFJ1KUP82XrTSReaqQUVVRnh0O/vwhlc\nwTe2qB6+R2WpVNJlLmmrUxtRe4EWsF11YJS49gAKCtbpDnHXgFQtzU+dAoGAHqKi\nhnXUaeYkf39ccqRdHfxtllqe4gl39Ungxf/uRjqg+4n43Ka7EGU2V9y56sG9roUg\nUqPHPewkByTdDFtnF0tbtKW4rs2q9tSsjbVBt5kTcY3NmQrCibxrwLkZaScVrz4h\npw/cp8RPK0yd7AF5MBP5RBlF/YaLGZq8/MdRJhECgYEAqbvpc09ti9CPt+/hqb/e\nAU+jr8FEynjfY/sZcFj3KbMSILgUQNymnmrrLqPVy7ByFp5RnlW747fE45PTTmUV\n0XUndAwD70lNLYOhLJcXrHrh4RzVAvnMmE50I/dlYLkhVM4vNQq5AghV1uq+J8IM\nlzV77I9BJr+dBYSc0ZXT+yQ=\n-----END PRIVATE KEY-----\n", "client_email": "fake@fake-project.iam.gserviceaccount.com", "client_id": "123456789", "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token"}'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      # Same command used locally (see CLAUDE.md) — no migrations folder in
+      # this project, db push creates the schema from scratch every run.
+      - name: Create schema on the ephemeral DB
+        run: npx prisma db push --skip-generate
+
+      # deduplication.test.js is self-contained (creates/deletes its own
+      # fixture row, see its own comment) — unlike the 2 excluded above, it
+      # doesn't depend on any pre-existing catalog data, so it runs here for
+      # the first time. storeRoutes.test.js (new) covers the ownership/
+      # soldAt/price/world/extraMoveCount business logic in
+      # src/routes/stores.js — each test creates and tears down its own
+      # User/Store/CatalogItem fixtures, same self-contained pattern.
+      - name: Run integration tests
+        run: node --test test/deduplication.test.js test/storeRoutes.test.js
+
+  frontend:
+    name: Frontend (build + lint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint

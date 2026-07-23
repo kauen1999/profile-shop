@@ -29,10 +29,14 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
+    "express-rate-limit": "^8.6.0",
     "firebase-admin": "^13.10.0",
     "sharp": "^0.35.3"
   },
   "devDependencies": {
     "prisma": "^6.19.3"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

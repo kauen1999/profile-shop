@@ -93,7 +93,7 @@ function computeExtraMovesCap(wikiPageId) {
 
 // Derives the gender options a species can be listed with, from the raw
 // wikitext infobox fields captured at sync time (extractedFields.infoboxFields
-// — see CatalogItem's `pokemon`/`pokemon-shiny`/`cherish-ball-pokemon` rows).
+// — see CatalogItem's `pokemon`/`pokemon-shiny` rows).
 // The wiki renders gender icons as `[[Arquivo:Male-otp.png ...]]` /
 // `[[Arquivo:Female-otp.png ...]]` / `[[Arquivo:Undefined.png ...]]` inside
 // one of the infobox cell values — there's no clean structured field for
@@ -161,12 +161,27 @@ router.get(
       // these rows (confirmed during planning) — raw SQL is required here,
       // same pattern GET /catalog-items already uses for its
       // subcategories/generation JSON filtering (src/routes/catalogItems.js).
-      // Union of: pokemon/pokemon-shiny rows flagged as obtainable via
-      // Cherish Ball (extractedFields.cherishBallPokemon === true), plus the
-      // dedicated `cherish-ball-pokemon` category outright. Confirmed via a
-      // real query during implementation: 118 cherish-ball-pokemon rows + 89
-      // flagged pokemon/pokemon-shiny rows = 207 total, matching the
-      // ~207 expected from planning.
+      //
+      // Union of two independent signals, restored 2026-07-18 after a
+      // same-day correction — see CLAUDE.md's "Estado atual do catálogo"
+      // 2026-07-18 entries for the full story. A same-day fix earlier had
+      // collapsed the dedicated `category = 'cherish-ball-pokemon'` bucket
+      // (118 rows) into `category: 'pokemon'`/`'pokemon-shiny'`, on the
+      // mistaken assumption that the `cherishBallPokemon` flag was already
+      // the single source of truth for this. That was wrong per explicit
+      // user correction: a Cherish Ball Pokémon is a distinct catalog item
+      // from the plain species (the ball is exclusive and comes bundled
+      // with the Pokémon) — the two need to coexist as separate rows, not
+      // be merged into one. The 118 rows were restored to their own
+      // `category: 'cherish-ball-pokemon'`, and 118 new, separate
+      // `category: 'pokemon'` rows were backfilled (one per missing
+      // species, e.g. Gengar/Togekiss/Raichu) so those species also show up
+      // in the unrestricted list below. Both signals matter here again:
+      // - `category = 'cherish-ball-pokemon'`: species/forms whose ONLY
+      //   obtainment path is the Cherish Ball (these 118 rows).
+      // - `extractedFields.cherishBallPokemon = 'true'` on `pokemon`/
+      //   `pokemon-shiny` rows: species obtainable BOTH normally AND via
+      //   Cherish Ball (their shiny variant carries the flag; ~89 rows).
       const rows = await prisma.$queryRaw`
         SELECT * FROM "CatalogItem"
         WHERE (category IN ('pokemon', 'pokemon-shiny') AND "extractedFields"->>'cherishBallPokemon' = 'true')
@@ -183,6 +198,15 @@ router.get(
       // independent `pokemon-shiny` rows, so the unrestricted list now
       // surfaces both categories directly; the frontend picks whichever row
       // (base or shiny) it wants, no separate shiny-resolution step needed.
+      // `category = 'cherish-ball-pokemon'` is deliberately NOT included
+      // here — those 118 rows only represent the exclusive Cherish Ball
+      // variant of a species (see the `restrictToCherishBall` branch
+      // above); a plain `category IN ('pokemon', 'pokemon-shiny')` filter
+      // naturally excludes them while still including every species' own
+      // base `pokemon`/`pokemon-shiny` row (backfilled 2026-07-18 for the
+      // 118 species that previously had none) and the ~89
+      // `cherishBallPokemon`-flagged rows (correctly still shown here too,
+      // since those species ARE obtainable outside the Cherish Ball).
       const where = { category: { in: ['pokemon', 'pokemon-shiny'] } };
       if (search) where.name = { contains: search, mode: 'insensitive' };
       allMatching = await prisma.catalogItem.findMany({ where, orderBy: { name: 'asc' } });

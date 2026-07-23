@@ -13,9 +13,13 @@ test('classifyItemCategory always returns { category, matchedRule }', () => {
 });
 
 test('a name matching a known rule sets matchedRule: true and the expected category', () => {
-  assert.deepEqual(classifyItemCategory('Pink heart carpet'), { category: 'carpets', matchedRule: true });
+  // 'carpets' and 'collectibles' (via the 'statues' rule) were folded into
+  // the single 'decoracao' category by the 2026-07-15 consolidation
+  // (CLAUDE.md, "Migração de dado real 2026-07-15") — categoryClassifier.js
+  // was updated to match at the time, this test wasn't.
+  assert.deepEqual(classifyItemCategory('Pink heart carpet'), { category: 'decoracao', matchedRule: true });
   assert.deepEqual(classifyItemCategory('TM01 - Fly'), { category: 'tms', matchedRule: true });
-  assert.deepEqual(classifyItemCategory('Legendary Blastoise Cursed Statue'), { category: 'collectibles', matchedRule: true });
+  assert.deepEqual(classifyItemCategory('Legendary Blastoise Cursed Statue'), { category: 'decoracao', matchedRule: true });
 });
 
 test('a name matching no rule falls back to materials with matchedRule: false', () => {
